@@ -94,7 +94,7 @@ def scan_ticker(
                 expiration=exp_date,
                 contract_type="call",
                 bid=float(row.get("bid", 0)),
-                ask=float(row["ask"]),
+                ask=float(row.get("_price", row["ask"])),
                 last_price=float(row.get("lastPrice", 0)),
                 volume=int(row["volume"]),
                 open_interest=int(row["openInterest"]),

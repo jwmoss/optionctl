@@ -9,17 +9,17 @@ if TYPE_CHECKING:
     import pandas as pd
 
 
-def is_penny_option(ask: float, max_price: float = 0.01) -> bool:
+def is_penny_option(price: float, max_price: float = 0.01) -> bool:
     """Check if an option qualifies as a penny option.
 
     Args:
-        ask: The ask price of the option contract.
+        price: The price of the option contract (ask, or lastPrice fallback).
         max_price: Maximum price threshold (default $0.01).
 
     Returns:
-        True if the ask is at or below max_price and greater than zero.
+        True if the price is at or below max_price and greater than zero.
     """
-    return 0 < ask <= max_price
+    return 0 < price <= max_price
 
 
 def volume_oi_ratio(volume: int, open_interest: int) -> float:
@@ -80,8 +80,15 @@ def apply_filters(
     # Drop rows with missing critical data
     df = df.dropna(subset=["ask", "volume", "openInterest"])
 
+    # Use ask price when available, fall back to lastPrice when market is closed
+    # (yfinance reports ask=0.0 outside trading hours)
+    if "lastPrice" in df.columns:
+        df["_price"] = df["ask"].where(df["ask"] > 0, df["lastPrice"])
+    else:
+        df["_price"] = df["ask"]
+
     # Penny price filter
-    df = df[(df["ask"] > 0) & (df["ask"] <= max_price)]
+    df = df[(df["_price"] > 0) & (df["_price"] <= max_price)]
 
     # Volume filter
     df = df[df["volume"] >= min_volume]

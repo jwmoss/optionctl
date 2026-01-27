@@ -85,6 +85,27 @@ def test_apply_filters_basic() -> None:
     assert result.iloc[0]["volumeOiRatio"] == 10.0
 
 
+def test_apply_filters_lastprice_fallback() -> None:
+    """When ask=0 (market closed), lastPrice is used as fallback."""
+    df = pd.DataFrame(
+        {
+            "strike": [130.0, 140.0],
+            "ask": [0.0, 0.0],
+            "bid": [0.0, 0.0],
+            "lastPrice": [0.01, 0.05],
+            "volume": [500, 300],
+            "openInterest": [100, 50],
+            "impliedVolatility": [0.5, 0.6],
+            "inTheMoney": [False, False],
+        }
+    )
+    result = apply_filters(df, underlying_price=95.0, max_price=0.01, min_volume=100)
+    # strike=130 should match (lastPrice=0.01), strike=140 excluded (lastPrice=0.05)
+    assert len(result) == 1
+    assert result.iloc[0]["strike"] == 130.0
+    assert result.iloc[0]["_price"] == 0.01
+
+
 def test_apply_filters_no_matches() -> None:
     df = pd.DataFrame(
         {
