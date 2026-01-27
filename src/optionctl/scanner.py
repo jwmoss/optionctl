@@ -15,6 +15,8 @@ from optionctl.scoring import score_candidates
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from optionctl.models import ScoringWeights
+
 logger = logging.getLogger(__name__)
 
 
@@ -115,6 +117,7 @@ def scan_universe(
     max_price: float = 0.01,
     min_volume: int = 100,
     progress_callback: Callable[[str, int, int], None] | None = None,
+    weights: ScoringWeights | None = None,
 ) -> ScanResult:
     """Scan multiple tickers for penny option candidates.
 
@@ -125,6 +128,7 @@ def scan_universe(
         max_price: Maximum ask price.
         min_volume: Minimum contract volume.
         progress_callback: Optional callback(ticker, current, total) for progress.
+        weights: Optional custom scoring weights.
 
     Returns:
         ScanResult with scored candidates and scan metadata.
@@ -141,5 +145,5 @@ def scan_universe(
             result.tickers_with_options += 1
             all_candidates.extend(candidates)
 
-    result.candidates = score_candidates(all_candidates)
+    result.candidates = score_candidates(all_candidates, weights)
     return result

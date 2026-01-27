@@ -12,9 +12,18 @@ from rich.console import Console
 from rich.table import Table
 
 if TYPE_CHECKING:
-    from optionctl.models import OptionCandidate
+    from optionctl.models import OptionCandidate, ScoringWeights
 
 console = Console()
+
+
+def _make_weights(
+    w_vol_oi: float, w_volume: float, w_proximity: float, w_iv: float
+) -> ScoringWeights:
+    """Build a ScoringWeights from CLI flag values."""
+    from optionctl.models import ScoringWeights
+
+    return ScoringWeights(vol_oi=w_vol_oi, volume=w_volume, proximity=w_proximity, iv=w_iv)
 
 
 def _render_table(candidates: list[OptionCandidate], title: str) -> None:
@@ -154,6 +163,10 @@ def main() -> None:
     default="table",
     help="Output format.",
 )
+@click.option("--w-vol-oi", type=float, default=30.0, help="Scoring weight: volume/OI ratio.")
+@click.option("--w-volume", type=float, default=15.0, help="Scoring weight: raw volume.")
+@click.option("--w-proximity", type=float, default=30.0, help="Scoring weight: strike proximity.")
+@click.option("--w-iv", type=float, default=25.0, help="Scoring weight: implied volatility.")
 def scan(
     universe: str,
     watchlist_file: str | None,
@@ -163,6 +176,10 @@ def scan(
     max_price: float,
     min_volume: int,
     output_fmt: str,
+    w_vol_oi: float,
+    w_volume: float,
+    w_proximity: float,
+    w_iv: float,
 ) -> None:
     """Scan for penny OTM call options across a stock universe."""
     from rich.progress import Progress
@@ -170,6 +187,7 @@ def scan(
     from optionctl.scanner import scan_universe
     from optionctl.universe import get_tickers
 
+    weights = _make_weights(w_vol_oi, w_volume, w_proximity, w_iv)
     tickers = get_tickers(universe, watchlist_file, top_n)
     console.print(f"Scanning {len(tickers)} tickers ({universe})...")
 
@@ -186,6 +204,7 @@ def scan(
             max_price,
             min_volume,
             progress_callback=on_progress,
+            weights=weights,
         )
 
     console.print(
@@ -212,12 +231,25 @@ def spy() -> None:
     default="table",
     help="Output format.",
 )
-def penny(max_price: float, min_volume: int, output_fmt: str) -> None:
+@click.option("--w-vol-oi", type=float, default=30.0, help="Scoring weight: volume/OI ratio.")
+@click.option("--w-volume", type=float, default=15.0, help="Scoring weight: raw volume.")
+@click.option("--w-proximity", type=float, default=30.0, help="Scoring weight: strike proximity.")
+@click.option("--w-iv", type=float, default=25.0, help="Scoring weight: implied volatility.")
+def penny(
+    max_price: float,
+    min_volume: int,
+    output_fmt: str,
+    w_vol_oi: float,
+    w_volume: float,
+    w_proximity: float,
+    w_iv: float,
+) -> None:
     """Find SPY 0DTE penny call options."""
     from optionctl.spy import find_penny_0dte
 
+    weights = _make_weights(w_vol_oi, w_volume, w_proximity, w_iv)
     console.print("Scanning SPY 0DTE for penny calls...")
-    candidates = find_penny_0dte(max_price, min_volume)
+    candidates = find_penny_0dte(max_price, min_volume, weights)
     console.print(f"Found {len(candidates)} candidates")
     _render(candidates, output_fmt, "SPY 0DTE Penny Calls")
 
@@ -237,11 +269,24 @@ def penny(max_price: float, min_volume: int, output_fmt: str) -> None:
     default="table",
     help="Output format.",
 )
-def momentum(max_distance: float, min_volume: int, output_fmt: str) -> None:
+@click.option("--w-vol-oi", type=float, default=30.0, help="Scoring weight: volume/OI ratio.")
+@click.option("--w-volume", type=float, default=15.0, help="Scoring weight: raw volume.")
+@click.option("--w-proximity", type=float, default=30.0, help="Scoring weight: strike proximity.")
+@click.option("--w-iv", type=float, default=25.0, help="Scoring weight: implied volatility.")
+def momentum(
+    max_distance: float,
+    min_volume: int,
+    output_fmt: str,
+    w_vol_oi: float,
+    w_volume: float,
+    w_proximity: float,
+    w_iv: float,
+) -> None:
     """Find SPY 0DTE near-the-money calls for momentum scalping."""
     from optionctl.spy import find_momentum_0dte
 
+    weights = _make_weights(w_vol_oi, w_volume, w_proximity, w_iv)
     console.print("Scanning SPY 0DTE for momentum candidates...")
-    candidates = find_momentum_0dte(max_distance, min_volume)
+    candidates = find_momentum_0dte(max_distance, min_volume, weights)
     console.print(f"Found {len(candidates)} candidates")
     _render(candidates, output_fmt, "SPY 0DTE Momentum Candidates")

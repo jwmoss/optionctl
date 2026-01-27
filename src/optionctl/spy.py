@@ -8,7 +8,7 @@ from datetime import UTC, date, datetime
 import yfinance as yf
 
 from optionctl.filters import apply_filters, proximity_pct, volume_oi_ratio
-from optionctl.models import OptionCandidate
+from optionctl.models import OptionCandidate, ScoringWeights
 from optionctl.scoring import score_candidates
 
 logger = logging.getLogger(__name__)
@@ -57,12 +57,14 @@ def _get_spy_price() -> float:
 def find_penny_0dte(
     max_price: float = 0.01,
     min_volume: int = 100,
+    weights: ScoringWeights | None = None,
 ) -> list[OptionCandidate]:
     """Find SPY 0DTE OTM call options priced at pennies.
 
     Args:
         max_price: Maximum ask price (default $0.01).
         min_volume: Minimum contract volume.
+        weights: Optional custom scoring weights.
 
     Returns:
         Scored list of penny 0DTE candidates.
@@ -105,12 +107,13 @@ def find_penny_0dte(
         )
         candidates.append(candidate)
 
-    return score_candidates(candidates)
+    return score_candidates(candidates, weights)
 
 
 def find_momentum_0dte(
     max_distance_pct: float = 2.0,
     min_volume: int = 500,
+    weights: ScoringWeights | None = None,
 ) -> list[OptionCandidate]:
     """Find SPY 0DTE near-the-money calls for momentum/gamma scalping.
 
@@ -120,6 +123,7 @@ def find_momentum_0dte(
     Args:
         max_distance_pct: Maximum distance from underlying as a percentage.
         min_volume: Minimum contract volume.
+        weights: Optional custom scoring weights.
 
     Returns:
         Scored list of momentum candidates sorted by proximity.
@@ -175,4 +179,4 @@ def find_momentum_0dte(
         )
         candidates.append(candidate)
 
-    return score_candidates(candidates)
+    return score_candidates(candidates, weights)

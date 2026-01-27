@@ -32,6 +32,16 @@ class OptionCandidate:
 
 
 @dataclass
+class ScoringWeights:
+    """Configurable weights for composite scoring (must sum to 100)."""
+
+    vol_oi: float = 30.0
+    volume: float = 15.0
+    proximity: float = 30.0
+    iv: float = 25.0
+
+
+@dataclass
 class ScanResult:
     """Result of a scan across multiple tickers."""
 

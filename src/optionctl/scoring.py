@@ -5,100 +5,144 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from optionctl.models import OptionCandidate
-
-# Scoring weights
-WEIGHT_VOLUME_OI = 40.0
-WEIGHT_PROXIMITY = 35.0
-WEIGHT_IV = 25.0
+    from optionctl.models import OptionCandidate, ScoringWeights
 
 # Normalization caps
 MAX_VOL_OI_RATIO = 5.0
+MAX_VOLUME = 5000.0
 MAX_PROXIMITY_PCT = 20.0
 MAX_IV = 2.0
 
+# Default weights
+DEFAULT_WEIGHT_VOL_OI = 30.0
+DEFAULT_WEIGHT_VOLUME = 15.0
+DEFAULT_WEIGHT_PROXIMITY = 30.0
+DEFAULT_WEIGHT_IV = 25.0
 
-def score_volume_oi(vol_oi_ratio: float) -> float:
-    """Score based on volume/OI ratio (0 to WEIGHT_VOLUME_OI).
+
+def score_volume_oi(vol_oi_ratio: float, weight: float = DEFAULT_WEIGHT_VOL_OI) -> float:
+    """Score based on volume/OI ratio.
 
     Higher ratios indicate more unusual activity relative to open interest.
 
     Args:
         vol_oi_ratio: Volume divided by open interest.
+        weight: Maximum points for this component.
 
     Returns:
         Weighted score component.
     """
     normalized = min(vol_oi_ratio / MAX_VOL_OI_RATIO, 1.0)
-    return normalized * WEIGHT_VOLUME_OI
+    return normalized * weight
 
 
-def score_proximity(proximity_pct: float) -> float:
-    """Score based on strike proximity to underlying (0 to WEIGHT_PROXIMITY).
+def score_volume(volume: int, weight: float = DEFAULT_WEIGHT_VOLUME) -> float:
+    """Score based on raw contract volume.
+
+    Higher volume means more liquidity and stronger conviction.
+
+    Args:
+        volume: Number of contracts traded today.
+        weight: Maximum points for this component.
+
+    Returns:
+        Weighted score component.
+    """
+    normalized = min(volume / MAX_VOLUME, 1.0)
+    return normalized * weight
+
+
+def score_proximity(proximity_pct: float, weight: float = DEFAULT_WEIGHT_PROXIMITY) -> float:
+    """Score based on strike proximity to underlying.
 
     Closer strikes score higher since they have a better chance of going ITM.
 
     Args:
         proximity_pct: Distance from strike to underlying as a percentage.
+        weight: Maximum points for this component.
 
     Returns:
         Weighted score component.
     """
     normalized = max(0.0, (MAX_PROXIMITY_PCT - proximity_pct) / MAX_PROXIMITY_PCT)
-    return normalized * WEIGHT_PROXIMITY
+    return normalized * weight
 
 
-def score_iv(implied_volatility: float) -> float:
-    """Score based on implied volatility (0 to WEIGHT_IV).
+def score_iv(implied_volatility: float, weight: float = DEFAULT_WEIGHT_IV) -> float:
+    """Score based on implied volatility.
 
     Higher IV suggests the market expects a larger move.
 
     Args:
         implied_volatility: Implied volatility as a decimal (e.g. 0.45 = 45%).
+        weight: Maximum points for this component.
 
     Returns:
         Weighted score component.
     """
     normalized = min(implied_volatility / MAX_IV, 1.0)
-    return normalized * WEIGHT_IV
+    return normalized * weight
 
 
 def compute_score(
     vol_oi_ratio: float,
+    volume: int,
     proximity_pct: float,
     implied_volatility: float,
+    weights: ScoringWeights | None = None,
 ) -> float:
-    """Compute composite score (0-100) for an option candidate.
+    """Compute composite score for an option candidate.
 
-    The score combines three signals:
-    - Volume/OI ratio (40%): unusual activity
-    - Proximity to strike (35%): likelihood of going ITM
-    - Implied volatility (25%): expected move size
+    The score combines four signals:
+    - Volume/OI ratio: unusual activity
+    - Raw volume: liquidity and conviction
+    - Proximity to strike: likelihood of going ITM
+    - Implied volatility: expected move size
 
     Args:
         vol_oi_ratio: Volume divided by open interest.
+        volume: Raw contract volume.
         proximity_pct: Distance from strike to underlying as a percentage.
         implied_volatility: IV as a decimal.
+        weights: Optional custom weights. Uses defaults if None.
 
     Returns:
-        Composite score from 0 to 100.
+        Composite score (0 to sum of weights, default 100).
     """
+    if weights is None:
+        w_vol_oi = DEFAULT_WEIGHT_VOL_OI
+        w_volume = DEFAULT_WEIGHT_VOLUME
+        w_proximity = DEFAULT_WEIGHT_PROXIMITY
+        w_iv = DEFAULT_WEIGHT_IV
+    else:
+        w_vol_oi = weights.vol_oi
+        w_volume = weights.volume
+        w_proximity = weights.proximity
+        w_iv = weights.iv
+
     return (
-        score_volume_oi(vol_oi_ratio)
-        + score_proximity(proximity_pct)
-        + score_iv(implied_volatility)
+        score_volume_oi(vol_oi_ratio, w_vol_oi)
+        + score_volume(volume, w_volume)
+        + score_proximity(proximity_pct, w_proximity)
+        + score_iv(implied_volatility, w_iv)
     )
 
 
-def score_candidates(candidates: list[OptionCandidate]) -> list[OptionCandidate]:
+def score_candidates(
+    candidates: list[OptionCandidate],
+    weights: ScoringWeights | None = None,
+) -> list[OptionCandidate]:
     """Score and sort a list of option candidates by composite score descending.
 
     Args:
         candidates: List of unscored candidates.
+        weights: Optional custom weights. Uses defaults if None.
 
     Returns:
         Same list, scored and sorted highest first.
     """
     for c in candidates:
-        c.score = compute_score(c.volume_oi_ratio, c.proximity_pct, c.implied_volatility)
+        c.score = compute_score(
+            c.volume_oi_ratio, c.volume, c.proximity_pct, c.implied_volatility, weights
+        )
     return sorted(candidates, key=lambda c: c.score, reverse=True)
