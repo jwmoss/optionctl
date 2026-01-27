@@ -92,42 +92,15 @@ optionctl scan --w-vol-oi 10 --w-volume 10 --w-proximity 60 --w-iv 20  # proximi
 | `--w-proximity` | `30` | Scoring weight: strike proximity |
 | `--w-iv` | `25` | Scoring weight: implied volatility |
 
-## Example: Finding High-Conviction Penny Options
+## Examples
 
-**Scenario**: It's a weekday and you want to find which $0.01 OTM calls have the
-most volume -- contracts where a lot of people are piling in. You don't care about
-proximity or IV, just raw trading activity.
+See the [examples/](examples/) directory for detailed walkthroughs:
 
-```bash
-$ optionctl scan --universe volume --w-vol-oi 0 --w-volume 100 --w-proximity 0 --w-iv 0 --min-volume 50
-```
-
-Sample output (Jan 26, 2026):
-
-```
-ticker,strike,expiration,ask,volume,open_interest,volume_oi_ratio,score,contract_symbol
-INTC,58.0,2026-01-30,0.01,6350,5195,1.22,100.0,INTC260130C00058000
-INTC,60.0,2026-01-30,0.01,2486,15503,0.16,49.7,INTC260130C00060000
-INTC,59.0,2026-01-30,0.01,2409,1783,1.35,48.2,INTC260130C00059000
-NVDA,215.0,2026-01-30,0.01,2193,11050,0.20,43.9,NVDA260130C00215000
-INTC,69.0,2026-01-30,0.01,1553,1558,1.00,31.1,INTC260130C00069000
-```
-
-INTC dominates with 6,350 contracts on the $58 call alone. Three of the top five
-are INTC, which suggests concentrated betting on an Intel move before Friday
-expiration. Compare with the default balanced scoring to see if these also rank
-well on proximity and IV -- if they do, that's a stronger signal.
-
-**Follow-up**: switch to the balanced score to validate:
-
-```bash
-$ optionctl scan --universe volume --min-volume 50
-```
-
-Now the same INTC $58 call scores 23.1 (down from 100) because it's 36% OTM --
-lots of people buying it, but it needs a massive move. The contracts that score
-highest on balanced weights are the ones with both volume *and* a realistic
-chance of hitting.
+- **[High-Conviction Volume Scan](examples/high-conviction-volume.md)** -- Find penny options with the most raw trading activity using pure volume scoring
+- **[SPY 0DTE Penny Hunting](examples/spy-0dte-penny.md)** -- Find $0.01 SPY calls expiring today for lottery plays
+- **[SPY 0DTE Momentum Scalping](examples/spy-0dte-momentum.md)** -- Find near-the-money SPY 0DTE calls for quick scalps
+- **[Custom Watchlist](examples/custom-watchlist.md)** -- Scan a specific set of tickers, including pre-earnings plays
+- **[General Usage](examples/usage.md)** -- Full reference for all commands, flags, output formats, and `jq` recipes
 
 ## Development
 
