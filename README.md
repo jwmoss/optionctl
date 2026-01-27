@@ -21,13 +21,14 @@ A Python CLI tool to find stock options on high-volume stocks priced at $0.01 wi
 
 ### Filtering Criteria
 
-| Filter | Description |
-|--------|-------------|
-| Volume/OI ratio | High volume relative to open interest signals unusual activity / new positions |
-| Proximity to strike | How close the underlying is to the strike -- closer = higher chance of going ITM |
-| IV spike | High IV relative to historical IV suggests expected move / catalyst |
+| Signal | Default Weight | Description |
+|--------|---------------|-------------|
+| Volume/OI ratio | 30 | High volume relative to open interest signals unusual activity / new positions |
+| Raw volume | 15 | High absolute volume means liquidity and stronger conviction |
+| Proximity to strike | 30 | How close the underlying is to the strike -- closer = higher chance of going ITM |
+| Implied volatility | 25 | High IV suggests expected move / catalyst |
 
-All three filters are combined into a composite score to rank candidates.
+All four signals are combined into a configurable composite score to rank candidates.
 
 ### Data Source
 
@@ -66,6 +67,16 @@ optionctl spy penny                     # Find SPY 0DTE penny calls ($0.01)
 optionctl spy momentum                  # Find high-gamma scalp candidates
 ```
 
+### Custom Scoring Weights
+
+All weights are tunable via CLI flags. They default to summing to 100:
+
+```bash
+optionctl scan --w-vol-oi 30 --w-volume 15 --w-proximity 30 --w-iv 25  # defaults
+optionctl scan --w-vol-oi 0 --w-volume 100 --w-proximity 0 --w-iv 0    # pure volume
+optionctl scan --w-vol-oi 10 --w-volume 10 --w-proximity 60 --w-iv 20  # proximity-focused
+```
+
 ### Common Flags
 
 | Flag | Default | Description |
@@ -76,6 +87,47 @@ optionctl spy momentum                  # Find high-gamma scalp candidates
 | `--watchlist-file` | - | Path to file with ticker symbols (one per line) |
 | `--min-volume` | `100` | Minimum contract volume |
 | `--output` | `table` | Output format: `table`, `json`, `csv` |
+| `--w-vol-oi` | `30` | Scoring weight: volume/OI ratio |
+| `--w-volume` | `15` | Scoring weight: raw volume |
+| `--w-proximity` | `30` | Scoring weight: strike proximity |
+| `--w-iv` | `25` | Scoring weight: implied volatility |
+
+## Example: Finding High-Conviction Penny Options
+
+**Scenario**: It's a weekday and you want to find which $0.01 OTM calls have the
+most volume -- contracts where a lot of people are piling in. You don't care about
+proximity or IV, just raw trading activity.
+
+```bash
+$ optionctl scan --universe volume --w-vol-oi 0 --w-volume 100 --w-proximity 0 --w-iv 0 --min-volume 50
+```
+
+Sample output (Jan 26, 2026):
+
+```
+ticker,strike,expiration,ask,volume,open_interest,volume_oi_ratio,score,contract_symbol
+INTC,58.0,2026-01-30,0.01,6350,5195,1.22,100.0,INTC260130C00058000
+INTC,60.0,2026-01-30,0.01,2486,15503,0.16,49.7,INTC260130C00060000
+INTC,59.0,2026-01-30,0.01,2409,1783,1.35,48.2,INTC260130C00059000
+NVDA,215.0,2026-01-30,0.01,2193,11050,0.20,43.9,NVDA260130C00215000
+INTC,69.0,2026-01-30,0.01,1553,1558,1.00,31.1,INTC260130C00069000
+```
+
+INTC dominates with 6,350 contracts on the $58 call alone. Three of the top five
+are INTC, which suggests concentrated betting on an Intel move before Friday
+expiration. Compare with the default balanced scoring to see if these also rank
+well on proximity and IV -- if they do, that's a stronger signal.
+
+**Follow-up**: switch to the balanced score to validate:
+
+```bash
+$ optionctl scan --universe volume --min-volume 50
+```
+
+Now the same INTC $58 call scores 23.1 (down from 100) because it's 36% OTM --
+lots of people buying it, but it needs a massive move. The contracts that score
+highest on balanced weights are the ones with both volume *and* a realistic
+chance of hitting.
 
 ## Development
 
