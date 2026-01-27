@@ -115,6 +115,7 @@ max-positional-args = 5
     "S101",  # asserts are expected in tests
     "PLR2004",  # allow magic values in tests
     "PLC0415",  # allow deferred imports in tests
+    "PT019",  # @patch args misidentified as fixtures
 ]
 "**/conftest.py" = ["D"]  # No docstrings in pytest config
 [tool.interrogate]
