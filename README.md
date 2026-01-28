@@ -14,9 +14,7 @@ A Python CLI tool to find stock options on high-volume stocks priced at $0.01 wi
 ### SPY 0DTE
 
 - SPY has M/W/F expirations with massive liquidity
-- Two modes:
-  - **Penny hunting**: far OTM $0.01 calls for lottery plays
-  - **Momentum/gamma scalping**: near-the-money high-gamma contracts for scalp potential
+- **Penny hunting**: far OTM $0.01 calls for lottery plays
 - Best windows: 9:30-10:30 AM ET and 3:30-4:00 PM ET
 
 ### Filtering Criteria
@@ -64,7 +62,6 @@ optionctl scan --output json            # Output as JSON
 
 ```bash
 optionctl spy penny                     # Find SPY 0DTE penny calls ($0.01)
-optionctl spy momentum                  # Find high-gamma scalp candidates
 ```
 
 ### Custom Scoring Weights
@@ -98,7 +95,6 @@ See the [examples/](examples/) directory for detailed walkthroughs:
 
 - **[High-Conviction Volume Scan](examples/high-conviction-volume.md)** -- Find penny options with the most raw trading activity using pure volume scoring
 - **[SPY 0DTE Penny Hunting](examples/spy-0dte-penny.md)** -- Find $0.01 SPY calls expiring today for lottery plays
-- **[SPY 0DTE Momentum Scalping](examples/spy-0dte-momentum.md)** -- Find near-the-money SPY 0DTE calls for quick scalps
 - **[Custom Watchlist](examples/custom-watchlist.md)** -- Scan a specific set of tickers, including pre-earnings plays
 - **[General Usage](examples/usage.md)** -- Full reference for all commands, flags, output formats, and `jq` recipes
 
