@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import signal
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
@@ -18,6 +19,14 @@ if TYPE_CHECKING:
     from optionctl.models import ScoringWeights
 
 logger = logging.getLogger(__name__)
+
+_interrupted = False
+
+
+def _handle_sigint(signum: int, frame: object) -> None:  # noqa: ARG001
+    """Set the interrupt flag so the scan loop exits between tickers."""
+    global _interrupted  # noqa: PLW0603
+    _interrupted = True
 
 
 def _parse_expiration(exp_str: str) -> date:
@@ -133,11 +142,20 @@ def scan_universe(
     Returns:
         ScanResult with scored candidates and scan metadata.
     """
+    global _interrupted  # noqa: PLW0603
+    _interrupted = False
+    prev_handler = signal.signal(signal.SIGINT, _handle_sigint)
+
     result = ScanResult(tickers_scanned=len(tickers))
     all_candidates: list[OptionCandidate] = []
 
     try:
         for i, ticker in enumerate(tickers):
+            if _interrupted:
+                logger.info("Scan interrupted after %d/%d tickers", i, len(tickers))
+                result.tickers_scanned = i
+                break
+
             if progress_callback:
                 progress_callback(ticker, i + 1, len(tickers))
 
@@ -145,9 +163,8 @@ def scan_universe(
             if candidates:
                 result.tickers_with_options += 1
                 all_candidates.extend(candidates)
-    except KeyboardInterrupt:
-        logger.info("Scan interrupted after %d/%d tickers", i + 1, len(tickers))
-        result.tickers_scanned = i + 1
+    finally:
+        signal.signal(signal.SIGINT, prev_handler)
 
     result.candidates = score_candidates(all_candidates, weights)
     return result
