@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import signal
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_WORKERS: int = 8
 _interrupted = False
 
 
@@ -127,6 +129,7 @@ def scan_universe(
     min_volume: int = 100,
     progress_callback: Callable[[str, int, int], None] | None = None,
     weights: ScoringWeights | None = None,
+    workers: int = _DEFAULT_WORKERS,
 ) -> ScanResult:
     """Scan multiple tickers for penny option candidates.
 
@@ -138,6 +141,7 @@ def scan_universe(
         min_volume: Minimum contract volume.
         progress_callback: Optional callback(ticker, current, total) for progress.
         weights: Optional custom scoring weights.
+        workers: Number of concurrent threads for scanning.
 
     Returns:
         ScanResult with scored candidates and scan metadata.
@@ -148,21 +152,32 @@ def scan_universe(
 
     result = ScanResult(tickers_scanned=len(tickers))
     all_candidates: list[OptionCandidate] = []
+    completed_count = 0
 
     try:
-        for i, ticker in enumerate(tickers):
-            if _interrupted:
-                logger.info("Scan interrupted after %d/%d tickers", i, len(tickers))
-                result.tickers_scanned = i
-                break
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(scan_ticker, t, min_dte, max_dte, max_price, min_volume): t
+                for t in tickers
+            }
 
-            if progress_callback:
-                progress_callback(ticker, i + 1, len(tickers))
+            for future in as_completed(futures):
+                if _interrupted:
+                    for f in futures:
+                        f.cancel()
+                    result.tickers_scanned = completed_count
+                    break
 
-            candidates = scan_ticker(ticker, min_dte, max_dte, max_price, min_volume)
-            if candidates:
-                result.tickers_with_options += 1
-                all_candidates.extend(candidates)
+                ticker = futures[future]
+                completed_count += 1
+
+                if progress_callback:
+                    progress_callback(ticker, completed_count, len(tickers))
+
+                candidates = future.result()
+                if candidates:
+                    result.tickers_with_options += 1
+                    all_candidates.extend(candidates)
     finally:
         signal.signal(signal.SIGINT, prev_handler)
 
