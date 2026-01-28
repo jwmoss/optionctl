@@ -111,9 +111,11 @@ max-positional-args = 5
     "BLE001",  # yfinance raises unpredictable exceptions
 ]
 "test/**/*.py" = [
-    "D",    # no docstrings in tests
+    "ANN",   # no type annotations in tests
+    "D",     # no docstrings in tests
     "S101",  # asserts are expected in tests
     "PLR2004",  # allow magic values in tests
+    "PLR0913",  # parametrized/mock tests often have many args
     "PLC0415",  # allow deferred imports in tests
     "PT019",  # @patch args misidentified as fixtures
 ]

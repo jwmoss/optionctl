@@ -3,68 +3,82 @@
 import math
 
 import pandas as pd
+import pytest
 
 from optionctl.filters import apply_filters, is_penny_option, proximity_pct, volume_oi_ratio
 
-
-def test_is_penny_option_at_threshold() -> None:
-    assert is_penny_option(0.01) is True
-
-
-def test_is_penny_option_below_threshold() -> None:
-    assert is_penny_option(0.005) is True
+# ---------------------------------------------------------------------------
+# is_penny_option — parametrized
+# ---------------------------------------------------------------------------
 
 
-def test_is_penny_option_above_threshold() -> None:
-    assert is_penny_option(0.02) is False
+@pytest.mark.parametrize(
+    ("price", "max_price", "expected"),
+    [
+        (0.01, 0.01, True),
+        (0.005, 0.01, True),
+        (0.02, 0.01, False),
+        (0.0, 0.01, False),
+        (0.05, 0.05, True),
+        (0.06, 0.05, False),
+    ],
+    ids=[
+        "at-threshold",
+        "below-threshold",
+        "above-threshold",
+        "zero-price",
+        "custom-max-at",
+        "custom-max-above",
+    ],
+)
+def test_is_penny_option(price, max_price, expected):
+    assert is_penny_option(price, max_price=max_price) is expected
 
 
-def test_is_penny_option_zero() -> None:
-    assert is_penny_option(0.0) is False
+# ---------------------------------------------------------------------------
+# volume_oi_ratio — parametrized
+# ---------------------------------------------------------------------------
 
 
-def test_is_penny_option_custom_max() -> None:
-    assert is_penny_option(0.05, max_price=0.05) is True
-    assert is_penny_option(0.06, max_price=0.05) is False
+@pytest.mark.parametrize(
+    ("volume", "oi", "expected"),
+    [
+        (500, 100, 5.0),
+        (500, 0, 0.0),
+        (500, -1, 0.0),
+        (0, 100, 0.0),
+    ],
+    ids=["normal", "zero-oi", "negative-oi", "zero-volume"],
+)
+def test_volume_oi_ratio(volume, oi, expected):
+    assert volume_oi_ratio(volume, oi) == expected
 
 
-def test_volume_oi_ratio_normal() -> None:
-    assert volume_oi_ratio(500, 100) == 5.0
+# ---------------------------------------------------------------------------
+# proximity_pct — parametrized
+# ---------------------------------------------------------------------------
 
 
-def test_volume_oi_ratio_zero_oi() -> None:
-    assert volume_oi_ratio(500, 0) == 0.0
+@pytest.mark.parametrize(
+    ("price", "strike", "expected"),
+    [
+        (100.0, 110.0, 10.0),
+        (100.0, 95.0, 5.0),
+        (100.0, 100.0, 0.0),
+        (0.0, 100.0, math.inf),
+    ],
+    ids=["above", "below", "at-money", "zero-price"],
+)
+def test_proximity_pct(price, strike, expected):
+    assert proximity_pct(price, strike) == expected
 
 
-def test_volume_oi_ratio_negative_oi() -> None:
-    assert volume_oi_ratio(500, -1) == 0.0
+# ---------------------------------------------------------------------------
+# apply_filters
+# ---------------------------------------------------------------------------
 
 
-def test_volume_oi_ratio_zero_volume() -> None:
-    assert volume_oi_ratio(0, 100) == 0.0
-
-
-def test_proximity_pct_above() -> None:
-    # Strike 10% above underlying
-    result = proximity_pct(100.0, 110.0)
-    assert result == 10.0
-
-
-def test_proximity_pct_below() -> None:
-    # Strike 5% below underlying
-    result = proximity_pct(100.0, 95.0)
-    assert result == 5.0
-
-
-def test_proximity_pct_at_money() -> None:
-    assert proximity_pct(100.0, 100.0) == 0.0
-
-
-def test_proximity_pct_zero_price() -> None:
-    assert proximity_pct(0.0, 100.0) == math.inf
-
-
-def test_apply_filters_basic() -> None:
+def test_apply_filters_basic():
     df = pd.DataFrame(
         {
             "strike": [100.0, 110.0, 120.0, 130.0],
@@ -85,7 +99,7 @@ def test_apply_filters_basic() -> None:
     assert result.iloc[0]["volumeOiRatio"] == 10.0
 
 
-def test_apply_filters_lastprice_fallback() -> None:
+def test_apply_filters_lastprice_fallback():
     """When ask=0 (market closed), lastPrice is used as fallback."""
     df = pd.DataFrame(
         {
@@ -100,13 +114,12 @@ def test_apply_filters_lastprice_fallback() -> None:
         }
     )
     result = apply_filters(df, underlying_price=95.0, max_price=0.01, min_volume=100)
-    # strike=130 should match (lastPrice=0.01), strike=140 excluded (lastPrice=0.05)
     assert len(result) == 1
     assert result.iloc[0]["strike"] == 130.0
     assert result.iloc[0]["_price"] == 0.01
 
 
-def test_apply_filters_no_matches() -> None:
+def test_apply_filters_no_matches():
     df = pd.DataFrame(
         {
             "strike": [100.0],
@@ -120,3 +133,16 @@ def test_apply_filters_no_matches() -> None:
     )
     result = apply_filters(df, underlying_price=95.0, max_price=0.01, min_volume=100)
     assert len(result) == 0
+
+
+def test_apply_filters_uses_make_calls_df(make_calls_df):
+    """Demonstrate using the conftest factory fixture."""
+    df = make_calls_df(
+        strikes=[100.0, 200.0],
+        asks=[0.01, 0.01],
+        volumes=[500, 50],
+        open_interests=[100, 200],
+    )
+    result = apply_filters(df, underlying_price=50.0, max_price=0.01, min_volume=100)
+    assert len(result) == 1
+    assert result.iloc[0]["strike"] == 100.0
