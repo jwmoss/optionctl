@@ -276,3 +276,71 @@ def penny(
     candidates = find_penny_0dte(max_price, min_volume, weights)
     console.print(f"Found {len(candidates)} candidates")
     _render(candidates, output_fmt, "SPY 0DTE Penny Calls", limit=0 if show_all else limit)
+
+
+@main.command()
+@click.option("--top", type=int, default=3, help="Number of candidates to show from each scan.")
+def favorites(top: int) -> None:
+    """Run favorite scans: S&P 500 (balanced) + high-volume stocks (by volume)."""
+    from rich.progress import Progress
+
+    from optionctl.scanner import scan_universe
+    from optionctl.universe import get_sp500_tickers, get_top_volume_tickers
+
+    # S&P 500 scan with default balanced weights
+    sp500_weights = _make_weights(w_vol_oi=30, w_volume=15, w_proximity=30, w_iv=25)
+    sp500_tickers = get_sp500_tickers()
+    console.print(f"Scanning {len(sp500_tickers)} S&P 500 tickers...")
+
+    with Progress(console=console) as progress:
+        task = progress.add_task("Scanning...", total=len(sp500_tickers))
+
+        def on_sp500_progress(ticker: str, current: int, total: int) -> None:
+            progress.update(task, completed=current, description=f"Scanning {ticker}...")
+
+        sp500_result = scan_universe(
+            sp500_tickers,
+            min_dte=0,
+            max_dte=5,
+            max_price=0.01,
+            min_volume=100,
+            progress_callback=on_sp500_progress,
+            weights=sp500_weights,
+        )
+
+    console.print(
+        f"Scanned {sp500_result.tickers_scanned} tickers, "
+        f"{sp500_result.tickers_with_options} had options, "
+        f"found {len(sp500_result.candidates)} candidates",
+    )
+    _render(sp500_result.candidates, "table", "S&P 500 (balanced scoring, max 5 DTE)", limit=top)
+
+    console.print()
+
+    # High-volume stocks scan with pure volume weights
+    volume_weights = _make_weights(w_vol_oi=0, w_volume=100, w_proximity=0, w_iv=0)
+    volume_tickers = get_top_volume_tickers(50)
+    console.print(f"Scanning {len(volume_tickers)} high-volume tickers...")
+
+    with Progress(console=console) as progress:
+        task = progress.add_task("Scanning...", total=len(volume_tickers))
+
+        def on_volume_progress(ticker: str, current: int, total: int) -> None:
+            progress.update(task, completed=current, description=f"Scanning {ticker}...")
+
+        volume_result = scan_universe(
+            volume_tickers,
+            min_dte=0,
+            max_dte=14,
+            max_price=0.01,
+            min_volume=50,
+            progress_callback=on_volume_progress,
+            weights=volume_weights,
+        )
+
+    console.print(
+        f"Scanned {volume_result.tickers_scanned} tickers, "
+        f"{volume_result.tickers_with_options} had options, "
+        f"found {len(volume_result.candidates)} candidates",
+    )
+    _render(volume_result.candidates, "table", "High-Volume Stocks (by volume)", limit=top)

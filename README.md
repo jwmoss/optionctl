@@ -48,17 +48,25 @@ src/optionctl/
 
 ## Quick Start
 
-These are the go-to scans:
+Two main scanning approaches:
+
+### Broad market scan (smart money signals)
 
 ```bash
-# S&P 500 penny options expiring this week
 uv run optionctl scan --universe sp500 --max-dte 5
+```
 
-# High-volume stocks ranked purely by raw volume, lower volume floor
+Scans all ~500 S&P 500 stocks for penny options expiring this week. Uses balanced scoring that weighs volume/OI ratio, strike proximity, and IV to surface contracts with unusual activity patterns -- potential "smart money" signals across the broader market.
+
+### High-volume scan (where's the action)
+
+```bash
 uv run optionctl scan --universe volume \
   --w-vol-oi 0 --w-volume 100 --w-proximity 0 --w-iv 0 \
   --min-volume 50
 ```
+
+Scans a curated list of ~50 high-volume optionable stocks (AAPL, NVDA, TSLA, AMD, etc.) and ranks purely by raw trading volume. Ignores all other signals. Good for finding contracts with the most activity right now, regardless of whether it looks like informed trading.
 
 ## CLI Usage
 
