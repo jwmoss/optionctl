@@ -85,21 +85,6 @@ uv run optionctl spy penny --min-volume 500
 uv run optionctl spy penny --output json
 ```
 
-### Momentum Scalping
-
-Find near-the-money SPY 0DTE calls with high gamma potential:
-
-```bash
-# Default: within 2% of current price, 500+ volume
-uv run optionctl spy momentum
-
-# Tighter range
-uv run optionctl spy momentum --max-distance 1.0
-
-# Wider range, lower volume threshold
-uv run optionctl spy momentum --max-distance 3.0 --min-volume 200
-```
-
 ## Custom Scoring Weights
 
 The score is a composite of four signals. Default weights sum to 100:

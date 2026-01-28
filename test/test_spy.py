@@ -11,7 +11,6 @@ from optionctl.models import ScoringWeights
 from optionctl.spy import (
     _get_spy_0dte_expiration,
     _get_spy_price,
-    find_momentum_0dte,
     find_penny_0dte,
 )
 
@@ -124,59 +123,3 @@ def test_find_penny_0dte_custom_weights(_mock_exp, _mock_price, mock_yf, make_ca
     )
     weights = ScoringWeights(vol_oi=0, volume=100, proximity=0, iv=0)
     assert len(find_penny_0dte(weights=weights)) == 1
-
-
-# ---------------------------------------------------------------------------
-# find_momentum_0dte
-# ---------------------------------------------------------------------------
-
-
-@patch("optionctl.spy._get_spy_0dte_expiration", return_value=None)
-def test_find_momentum_0dte_no_expiration(_mock):
-    assert find_momentum_0dte() == []
-
-
-@patch("optionctl.spy.yf")
-@patch("optionctl.spy._get_spy_price", return_value=600.0)
-@patch("optionctl.spy._get_spy_0dte_expiration", return_value="2026-01-27")
-def test_find_momentum_0dte_with_results(_mock_exp, _mock_price, mock_yf, make_calls_df):
-    # 605 is ~0.83% OTM, 610 is ~1.67% OTM (within 2%), 650 is ~8.3% OTM (excluded)
-    calls = make_calls_df(
-        strikes=[605.0, 610.0, 650.0],
-        asks=[2.50, 1.00, 0.01],
-        volumes=[2000, 1500, 800],
-        open_interests=[500, 300, 100],
-    )
-    mock_yf.Ticker.return_value.option_chain.return_value = OptionChain(
-        calls=calls, puts=make_calls_df(strikes=[])
-    )
-    result = find_momentum_0dte(max_distance_pct=2.0, min_volume=500)
-    assert len(result) == 2
-    assert all(c.proximity_pct <= 2.0 for c in result)
-
-
-@patch("optionctl.spy.yf")
-@patch("optionctl.spy._get_spy_price", return_value=600.0)
-@patch("optionctl.spy._get_spy_0dte_expiration", return_value="2026-01-27")
-def test_find_momentum_0dte_chain_error(_mock_exp, _mock_price, mock_yf):
-    mock_yf.Ticker.return_value.option_chain.side_effect = RuntimeError("chain fail")
-    assert find_momentum_0dte() == []
-
-
-@patch("optionctl.spy.yf")
-@patch("optionctl.spy._get_spy_price", return_value=600.0)
-@patch("optionctl.spy._get_spy_0dte_expiration", return_value="2026-01-27")
-def test_find_momentum_0dte_excludes_itm(_mock_exp, _mock_price, mock_yf, make_calls_df):
-    # Strike 595 is below current price (ITM), should be excluded
-    calls = make_calls_df(
-        strikes=[595.0, 605.0],
-        asks=[5.00, 2.50],
-        volumes=[2000, 1500],
-        open_interests=[500, 300],
-    )
-    mock_yf.Ticker.return_value.option_chain.return_value = OptionChain(
-        calls=calls, puts=make_calls_df(strikes=[])
-    )
-    result = find_momentum_0dte(max_distance_pct=2.0, min_volume=500)
-    assert len(result) == 1
-    assert result[0].strike == 605.0
