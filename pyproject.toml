@@ -99,6 +99,7 @@ max-positional-args = 5
 "src/optionctl/_cli.py" = [
     "T201",  # allow print in cli module
     "B008",  # allow function calls in click defaults
+    "FBT001",  # click boolean flags are idiomatic
     "PLC0415",  # deferred imports for fast CLI startup
     "PLR0913",  # click options map to function args
     "ARG001",  # callback signature requires all params
