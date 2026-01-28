@@ -167,6 +167,9 @@ def main() -> None:
 @click.option("--w-volume", type=float, default=15.0, help="Scoring weight: raw volume.")
 @click.option("--w-proximity", type=float, default=30.0, help="Scoring weight: strike proximity.")
 @click.option("--w-iv", type=float, default=25.0, help="Scoring weight: implied volatility.")
+@click.option(
+    "--refresh", is_flag=True, default=False, help="Bypass ticker cache and fetch fresh data."
+)
 def scan(
     universe: str,
     watchlist_file: str | None,
@@ -180,6 +183,7 @@ def scan(
     w_volume: float,
     w_proximity: float,
     w_iv: float,
+    refresh: bool,
 ) -> None:
     """Scan for penny OTM call options across a stock universe."""
     from rich.progress import Progress
@@ -188,7 +192,7 @@ def scan(
     from optionctl.universe import get_tickers
 
     weights = _make_weights(w_vol_oi, w_volume, w_proximity, w_iv)
-    tickers = get_tickers(universe, watchlist_file, top_n)
+    tickers = get_tickers(universe, watchlist_file, top_n, use_cache=not refresh)
     console.print(f"Scanning {len(tickers)} tickers ({universe})...")
 
     with Progress(console=console) as progress:
