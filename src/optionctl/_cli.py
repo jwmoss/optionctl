@@ -119,22 +119,32 @@ def _render_csv(candidates: list[OptionCandidate]) -> None:
         )
 
 
+_DEFAULT_LIMIT = 20
+
+
 def _render(
     candidates: list[OptionCandidate],
     output: str,
     title: str,
+    limit: int = _DEFAULT_LIMIT,
 ) -> None:
     """Dispatch rendering to the appropriate format."""
     if not candidates:
         console.print("[yellow]No candidates found.[/yellow]")
         return
 
+    total = len(candidates)
+    shown = candidates[:limit] if limit > 0 else candidates
+
     if output == "json":
-        _render_json(candidates)
+        _render_json(shown)
     elif output == "csv":
-        _render_csv(candidates)
+        _render_csv(shown)
     else:
-        _render_table(candidates, title)
+        _render_table(shown, title)
+
+    if limit > 0 and total > limit:
+        console.print(f"Showing {limit} of {total} candidates (use --all to see all)")
 
 
 @click.group()
@@ -170,6 +180,8 @@ def main() -> None:
 @click.option(
     "--refresh", is_flag=True, default=False, help="Bypass ticker cache and fetch fresh data."
 )
+@click.option("--limit", type=int, default=_DEFAULT_LIMIT, help="Max candidates to display.")
+@click.option("--all", "show_all", is_flag=True, default=False, help="Show all candidates.")
 def scan(
     universe: str,
     watchlist_file: str | None,
@@ -184,6 +196,8 @@ def scan(
     w_proximity: float,
     w_iv: float,
     refresh: bool,
+    limit: int,
+    show_all: bool,
 ) -> None:
     """Scan for penny OTM call options across a stock universe."""
     from rich.progress import Progress
@@ -217,7 +231,9 @@ def scan(
         f"found {len(result.candidates)} candidates",
     )
 
-    _render(result.candidates, output_fmt, "Penny Option Candidates")
+    _render(
+        result.candidates, output_fmt, "Penny Option Candidates", limit=0 if show_all else limit
+    )
 
 
 @main.group()
@@ -239,6 +255,8 @@ def spy() -> None:
 @click.option("--w-volume", type=float, default=15.0, help="Scoring weight: raw volume.")
 @click.option("--w-proximity", type=float, default=30.0, help="Scoring weight: strike proximity.")
 @click.option("--w-iv", type=float, default=25.0, help="Scoring weight: implied volatility.")
+@click.option("--limit", type=int, default=_DEFAULT_LIMIT, help="Max candidates to display.")
+@click.option("--all", "show_all", is_flag=True, default=False, help="Show all candidates.")
 def penny(
     max_price: float,
     min_volume: int,
@@ -247,6 +265,8 @@ def penny(
     w_volume: float,
     w_proximity: float,
     w_iv: float,
+    limit: int,
+    show_all: bool,
 ) -> None:
     """Find SPY 0DTE penny call options."""
     from optionctl.spy import find_penny_0dte
@@ -255,4 +275,4 @@ def penny(
     console.print("Scanning SPY 0DTE for penny calls...")
     candidates = find_penny_0dte(max_price, min_volume, weights)
     console.print(f"Found {len(candidates)} candidates")
-    _render(candidates, output_fmt, "SPY 0DTE Penny Calls")
+    _render(candidates, output_fmt, "SPY 0DTE Penny Calls", limit=0 if show_all else limit)
