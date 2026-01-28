@@ -121,6 +121,9 @@ def make_candidate():
         volume_oi_ratio: float = 5.0,
         proximity_pct: float = 25.0,
         ask: float = 0.01,
+        delta: float = 0.0,
+        volume_vs_avg: float = 0.0,
+        days_to_earnings: int | None = None,
     ) -> OptionCandidate:
         return OptionCandidate(
             ticker=ticker,
@@ -137,6 +140,9 @@ def make_candidate():
             dte=dte,
             volume_oi_ratio=volume_oi_ratio,
             proximity_pct=proximity_pct,
+            delta=delta,
+            volume_vs_avg=volume_vs_avg,
+            days_to_earnings=days_to_earnings,
         )
 
     return _factory
@@ -149,20 +155,32 @@ def make_candidate():
 
 @pytest.fixture
 def default_weights() -> ScoringWeights:
-    """Default scoring weights (30/15/30/25)."""
-    return ScoringWeights(vol_oi=30.0, volume=15.0, proximity=30.0, iv=25.0)
+    """Default scoring weights (25/10/25/20/10/10/0)."""
+    return ScoringWeights(
+        vol_oi=25.0,
+        volume=10.0,
+        proximity=25.0,
+        iv=20.0,
+        delta=10.0,
+        unusual_volume=10.0,
+        earnings=0.0,
+    )
 
 
 @pytest.fixture
 def volume_only_weights() -> ScoringWeights:
     """Only raw volume matters."""
-    return ScoringWeights(vol_oi=0.0, volume=100.0, proximity=0.0, iv=0.0)
+    return ScoringWeights(
+        vol_oi=0.0, volume=100.0, proximity=0.0, iv=0.0, delta=0.0, unusual_volume=0.0, earnings=0.0
+    )
 
 
 @pytest.fixture
 def proximity_only_weights() -> ScoringWeights:
     """Only strike proximity matters."""
-    return ScoringWeights(vol_oi=0.0, volume=0.0, proximity=100.0, iv=0.0)
+    return ScoringWeights(
+        vol_oi=0.0, volume=0.0, proximity=100.0, iv=0.0, delta=0.0, unusual_volume=0.0, earnings=0.0
+    )
 
 
 # ---------------------------------------------------------------------------

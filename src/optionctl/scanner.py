@@ -41,12 +41,70 @@ def _parse_expiration(exp_str: str) -> date:
     return date.fromisoformat(exp_str)
 
 
-def scan_ticker(
+def _get_earnings_days(stock: yf.Ticker, today: date) -> int | None:
+    """Get days until next earnings date.
+
+    Args:
+        stock: yfinance Ticker object.
+        today: Current date.
+
+    Returns:
+        Days until earnings, or None if unavailable.
+    """
+    try:
+        cal = stock.calendar
+        if cal is None or cal.empty:
+            return None
+        # calendar is a DataFrame with earnings date info
+        if "Earnings Date" in cal.index:
+            earnings_dates = cal.loc["Earnings Date"]
+            if hasattr(earnings_dates, "iloc"):
+                next_earnings = earnings_dates.iloc[0]
+            else:
+                next_earnings = earnings_dates
+            if hasattr(next_earnings, "date"):
+                earnings_date = next_earnings.date()
+            else:
+                earnings_date = next_earnings
+            return (earnings_date - today).days
+    except Exception:  # noqa: S110
+        pass
+    return None
+
+
+def _get_avg_volume_ratio(stock: yf.Ticker, current_volume: int) -> float:
+    """Calculate current volume as multiple of average.
+
+    Uses stock's average volume as a proxy for typical activity level.
+
+    Args:
+        stock: yfinance Ticker object.
+        current_volume: Today's option volume.
+
+    Returns:
+        Volume as multiple of average (e.g., 2.5 = 2.5x average).
+    """
+    try:
+        info = stock.fast_info
+        avg_vol = getattr(info, "average_volume", 0) or 0
+        if avg_vol > 0:
+            # Use ratio of option volume to (stock avg volume / 1000) as proxy
+            # This gives a rough sense of unusual activity
+            baseline = max(avg_vol / 1000, 100)
+            return current_volume / baseline
+    except Exception:  # noqa: S110
+        pass
+    return 0.0
+
+
+def scan_ticker(  # noqa: C901
     ticker: str,
     min_dte: int = 0,
     max_dte: int = 14,
     max_price: float = 0.01,
     min_volume: int = 100,
+    *,
+    fetch_enhanced: bool = True,
 ) -> list[OptionCandidate]:
     """Scan a single ticker for penny OTM call options.
 
@@ -56,6 +114,7 @@ def scan_ticker(
         max_dte: Maximum days to expiration.
         max_price: Maximum ask price (default $0.01).
         min_volume: Minimum contract volume.
+        fetch_enhanced: Whether to fetch enhanced signals (delta, earnings, etc.).
 
     Returns:
         List of qualifying option candidates.
@@ -81,6 +140,11 @@ def scan_ticker(
         logger.warning("Failed to get price for %s", ticker)
         return []
 
+    # Fetch enhanced data once per ticker
+    days_to_earnings: int | None = None
+    if fetch_enhanced:
+        days_to_earnings = _get_earnings_days(stock, today)
+
     for exp_str in expirations:
         exp_date = _parse_expiration(exp_str)
         dte = (exp_date - today).days
@@ -97,6 +161,18 @@ def scan_ticker(
         filtered = apply_filters(chain.calls, underlying_price, max_price, min_volume)
 
         for _, row in filtered.iterrows():
+            volume = int(row["volume"])
+
+            # Extract delta if available
+            delta = 0.0
+            if fetch_enhanced and "delta" in row.index:
+                delta = float(row.get("delta", 0) or 0)
+
+            # Calculate volume vs average
+            volume_vs_avg = 0.0
+            if fetch_enhanced:
+                volume_vs_avg = _get_avg_volume_ratio(stock, volume)
+
             candidate = OptionCandidate(
                 ticker=ticker,
                 strike=float(row["strike"]),
@@ -105,14 +181,18 @@ def scan_ticker(
                 bid=float(row.get("bid", 0)),
                 ask=float(row.get("_price", row["ask"])),
                 last_price=float(row.get("lastPrice", 0)),
-                volume=int(row["volume"]),
+                volume=volume,
                 open_interest=int(row["openInterest"]),
                 implied_volatility=float(row.get("impliedVolatility", 0)),
                 underlying_price=underlying_price,
                 dte=dte,
-                volume_oi_ratio=volume_oi_ratio(int(row["volume"]), int(row["openInterest"])),
+                volume_oi_ratio=volume_oi_ratio(volume, int(row["openInterest"])),
                 proximity_pct=proximity_pct(underlying_price, float(row["strike"])),
                 contract_symbol=str(row.get("contractSymbol", "")),
+                # Enhanced signals
+                delta=delta,
+                volume_vs_avg=volume_vs_avg,
+                days_to_earnings=days_to_earnings,
             )
             candidates.append(candidate)
 
@@ -127,6 +207,8 @@ def scan_universe(
     min_volume: int = 100,
     progress_callback: Callable[[str, int, int], None] | None = None,
     weights: ScoringWeights | None = None,
+    *,
+    fetch_enhanced: bool = True,
 ) -> ScanResult:
     """Scan multiple tickers for penny option candidates.
 
@@ -138,6 +220,7 @@ def scan_universe(
         min_volume: Minimum contract volume.
         progress_callback: Optional callback(ticker, current, total) for progress.
         weights: Optional custom scoring weights.
+        fetch_enhanced: Whether to fetch enhanced signals.
 
     Returns:
         ScanResult with scored candidates and scan metadata.
@@ -159,7 +242,9 @@ def scan_universe(
             if progress_callback:
                 progress_callback(ticker, i + 1, len(tickers))
 
-            candidates = scan_ticker(ticker, min_dte, max_dte, max_price, min_volume)
+            candidates = scan_ticker(
+                ticker, min_dte, max_dte, max_price, min_volume, fetch_enhanced
+            )
             if candidates:
                 result.tickers_with_options += 1
                 all_candidates.extend(candidates)

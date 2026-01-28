@@ -4,14 +4,19 @@ import pytest
 
 from optionctl.models import ScoringWeights
 from optionctl.scoring import (
+    DEFAULT_WEIGHT_DELTA,
     DEFAULT_WEIGHT_IV,
     DEFAULT_WEIGHT_PROXIMITY,
+    DEFAULT_WEIGHT_UNUSUAL_VOLUME,
     DEFAULT_WEIGHT_VOL_OI,
     DEFAULT_WEIGHT_VOLUME,
     compute_score,
     score_candidates,
+    score_delta,
+    score_earnings,
     score_iv,
     score_proximity,
+    score_unusual_volume,
     score_volume,
     score_volume_oi,
 )
@@ -81,26 +86,107 @@ def test_score_iv(iv, expected):
 
 
 # ---------------------------------------------------------------------------
+# Enhanced signal score functions
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("delta", "weight", "expected"),
+    [
+        (0.20, DEFAULT_WEIGHT_DELTA, DEFAULT_WEIGHT_DELTA),
+        (0.30, DEFAULT_WEIGHT_DELTA, DEFAULT_WEIGHT_DELTA),  # capped
+        (0.10, DEFAULT_WEIGHT_DELTA, DEFAULT_WEIGHT_DELTA / 2),
+        (0.0, DEFAULT_WEIGHT_DELTA, 0.0),
+        (-0.05, DEFAULT_WEIGHT_DELTA, 0.0),  # negative delta
+    ],
+    ids=["max", "above-max", "half", "zero", "negative"],
+)
+def test_score_delta(delta, weight, expected):
+    assert score_delta(delta, weight=weight) == expected
+
+
+@pytest.mark.parametrize(
+    ("vol_vs_avg", "weight", "expected"),
+    [
+        (5.0, DEFAULT_WEIGHT_UNUSUAL_VOLUME, DEFAULT_WEIGHT_UNUSUAL_VOLUME),
+        (10.0, DEFAULT_WEIGHT_UNUSUAL_VOLUME, DEFAULT_WEIGHT_UNUSUAL_VOLUME),  # capped
+        (2.5, DEFAULT_WEIGHT_UNUSUAL_VOLUME, DEFAULT_WEIGHT_UNUSUAL_VOLUME / 2),
+        (0.0, DEFAULT_WEIGHT_UNUSUAL_VOLUME, 0.0),
+    ],
+    ids=["max", "above-max", "half", "zero"],
+)
+def test_score_unusual_volume(vol_vs_avg, weight, expected):
+    assert score_unusual_volume(vol_vs_avg, weight=weight) == expected
+
+
+@pytest.mark.parametrize(
+    ("days_to_earn", "dte", "weight", "expected"),
+    [
+        (2, 5, 10.0, 10.0),  # earnings before expiry
+        (5, 5, 10.0, 10.0),  # earnings on expiry day
+        (10, 5, 10.0, 0.0),  # earnings after expiry
+        (None, 5, 10.0, 0.0),  # unknown earnings
+        (2, 5, 0.0, 0.0),  # weight disabled
+    ],
+    ids=["before-expiry", "on-expiry", "after-expiry", "unknown", "disabled"],
+)
+def test_score_earnings(days_to_earn, dte, weight, expected):
+    assert score_earnings(days_to_earn, dte, weight=weight) == expected
+
+
+# ---------------------------------------------------------------------------
 # compute_score
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
-    ("vol_oi", "volume", "prox", "iv", "weights", "expected"),
+    ("vol_oi", "volume", "prox", "iv", "delta", "vol_avg", "earn", "dte", "weights", "expected"),
     [
-        (5.0, 5000, 0.0, 2.0, None, 100.0),
-        (0.0, 0, 20.0, 0.0, None, 0.0),
-        (5.0, 5000, 0.0, 2.0, ScoringWeights(50.0, 0.0, 50.0, 0.0), 100.0),
-        (5.0, 2500, 0.0, 2.0, ScoringWeights(0.0, 100.0, 0.0, 0.0), 50.0),
+        # Perfect score with all enhanced signals maxed
+        (5.0, 5000, 0.0, 2.0, 0.20, 5.0, 2, 5, None, 100.0),
+        # Zero across the board
+        (0.0, 0, 20.0, 0.0, 0.0, 0.0, None, 5, None, 0.0),
+        # Without enhanced signals (delta=0, vol_avg=0) — only base signals contribute
+        (5.0, 5000, 0.0, 2.0, 0.0, 0.0, None, 5, None, 80.0),
+        # Custom weights ignoring enhanced signals
+        (
+            5.0,
+            5000,
+            0.0,
+            2.0,
+            0.20,
+            5.0,
+            2,
+            5,
+            ScoringWeights(50.0, 0.0, 50.0, 0.0, 0.0, 0.0, 0.0),
+            100.0,
+        ),
+        # Volume-only scoring
+        (
+            5.0,
+            2500,
+            0.0,
+            2.0,
+            0.0,
+            0.0,
+            None,
+            5,
+            ScoringWeights(0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+            50.0,
+        ),
     ],
-    ids=["perfect-defaults", "zero-all", "custom-weights", "volume-heavy"],
+    ids=["perfect-all", "zero-all", "no-enhanced", "custom-weights", "volume-heavy"],
 )
-def test_compute_score(vol_oi, volume, prox, iv, weights, expected):
+def test_compute_score(vol_oi, volume, prox, iv, delta, vol_avg, earn, dte, weights, expected):
     score = compute_score(
         vol_oi_ratio=vol_oi,
         volume=volume,
         proximity_pct=prox,
         implied_volatility=iv,
+        delta=delta,
+        volume_vs_avg=vol_avg,
+        days_to_earnings=earn,
+        dte=dte,
         weights=weights,
     )
     assert score == expected
@@ -113,7 +199,14 @@ def test_compute_score(vol_oi, volume, prox, iv, weights, expected):
 
 def test_score_candidates_sorts_descending(make_candidate):
     c1 = make_candidate(volume_oi_ratio=1.0, proximity_pct=15.0, implied_volatility=0.5, volume=100)
-    c2 = make_candidate(volume_oi_ratio=5.0, proximity_pct=0.0, implied_volatility=2.0, volume=5000)
+    c2 = make_candidate(
+        volume_oi_ratio=5.0,
+        proximity_pct=0.0,
+        implied_volatility=2.0,
+        volume=5000,
+        delta=0.20,
+        volume_vs_avg=5.0,
+    )
     c3 = make_candidate(
         volume_oi_ratio=2.5, proximity_pct=10.0, implied_volatility=1.0, volume=2500
     )
