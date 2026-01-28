@@ -102,7 +102,6 @@ def test_scan_universe_aggregates(mock_scan, make_candidate):
     result = scan_universe(
         ["A", "B", "C"],
         progress_callback=lambda t, i, n: progress_calls.append((t, i, n)),
-        workers=1,
     )
 
     assert result.tickers_scanned == 3
@@ -115,6 +114,6 @@ def test_scan_universe_aggregates(mock_scan, make_candidate):
 def test_scan_universe_with_custom_weights(mock_scan):
     mock_scan.return_value = []
     weights = ScoringWeights(vol_oi=0, volume=100, proximity=0, iv=0)
-    result = scan_universe(["X"], weights=weights, workers=1)
+    result = scan_universe(["X"], weights=weights)
     assert result.tickers_scanned == 1
     assert result.candidates == []
