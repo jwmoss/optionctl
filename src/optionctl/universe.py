@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import urllib.request
+from io import StringIO
 from pathlib import Path
 
 import pandas as pd
@@ -74,12 +75,11 @@ def _fetch_wikipedia_html(url: str) -> str:
     Returns:
         The HTML content as a string.
     """
-    req = urllib.request.Request(
+    req = urllib.request.Request(  # noqa: S310
         url,
         headers={
             "User-Agent": (
-                "Mozilla/5.0 (compatible; optionctl/0.1; "
-                "+https://github.com/jwmoss/optionctl)"
+                "Mozilla/5.0 (compatible; optionctl/0.1; +https://github.com/jwmoss/optionctl)"
             ),
         },
     )
@@ -93,8 +93,6 @@ def get_sp500_tickers() -> list[str]:
     Returns:
         List of ticker symbols for all S&P 500 components.
     """
-    from io import StringIO
-
     url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
     html = _fetch_wikipedia_html(url)
     tables = pd.read_html(StringIO(html))
