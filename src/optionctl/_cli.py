@@ -279,7 +279,7 @@ def penny(
 
 
 @main.command()
-@click.option("--top", type=int, default=3, help="Number of candidates to show from each scan.")
+@click.option("--top", type=int, default=5, help="Number of candidates to show from each scan.")
 def favorites(top: int) -> None:
     """Run favorite scans: S&P 500 (balanced) + high-volume stocks (by volume)."""
     from rich.progress import Progress
