@@ -52,6 +52,7 @@ src/optionctl/
 
 ```bash
 optionctl scan                          # Scan S&P 500 for $0.01 OTM calls
+optionctl scan --universe sp500 --max-dte 5  # S&P 500, same-week only
 optionctl scan --universe volume        # Scan top stocks by volume
 optionctl scan --universe watchlist --watchlist-file tickers.txt
 optionctl scan --min-dte 0 --max-dte 5  # Same-week expiration only

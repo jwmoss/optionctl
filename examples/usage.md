@@ -38,7 +38,10 @@ uv run optionctl scan --universe watchlist --watchlist-file tickers.txt
 ### Filter by Expiration
 
 ```bash
-# Same-week only (0-5 DTE)
+# S&P 500, same-week only (0-5 DTE)
+uv run optionctl scan --universe sp500 --max-dte 5
+
+# Same-week only (0-5 DTE) on high-volume stocks
 uv run optionctl scan --universe volume --min-dte 0 --max-dte 5
 
 # Next week only
