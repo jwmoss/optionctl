@@ -136,14 +136,18 @@ def scan_universe(
     result = ScanResult(tickers_scanned=len(tickers))
     all_candidates: list[OptionCandidate] = []
 
-    for i, ticker in enumerate(tickers):
-        if progress_callback:
-            progress_callback(ticker, i + 1, len(tickers))
+    try:
+        for i, ticker in enumerate(tickers):
+            if progress_callback:
+                progress_callback(ticker, i + 1, len(tickers))
 
-        candidates = scan_ticker(ticker, min_dte, max_dte, max_price, min_volume)
-        if candidates:
-            result.tickers_with_options += 1
-            all_candidates.extend(candidates)
+            candidates = scan_ticker(ticker, min_dte, max_dte, max_price, min_volume)
+            if candidates:
+                result.tickers_with_options += 1
+                all_candidates.extend(candidates)
+    except KeyboardInterrupt:
+        logger.info("Scan interrupted after %d/%d tickers", i + 1, len(tickers))
+        result.tickers_scanned = i + 1
 
     result.candidates = score_candidates(all_candidates, weights)
     return result
