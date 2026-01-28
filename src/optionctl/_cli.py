@@ -280,7 +280,14 @@ def penny(
 
 @main.command()
 @click.option("--top", type=int, default=5, help="Number of candidates to show from each scan.")
-def favorites(top: int) -> None:
+@click.option(
+    "--output",
+    "output_fmt",
+    type=click.Choice(["table", "json", "csv"]),
+    default="table",
+    help="Output format.",
+)
+def favorites(top: int, output_fmt: str) -> None:
     """Run favorite scans: S&P 500 (balanced) + high-volume stocks (by volume)."""
     from rich.progress import Progress
 
@@ -313,7 +320,7 @@ def favorites(top: int) -> None:
         f"{sp500_result.tickers_with_options} had options, "
         f"found {len(sp500_result.candidates)} candidates",
     )
-    _render(sp500_result.candidates, "table", "S&P 500 (balanced scoring, max 5 DTE)", limit=top)
+    _render(sp500_result.candidates, output_fmt, "S&P 500 (balanced scoring, max 5 DTE)", limit=top)
 
     console.print()
 
@@ -343,4 +350,4 @@ def favorites(top: int) -> None:
         f"{volume_result.tickers_with_options} had options, "
         f"found {len(volume_result.candidates)} candidates",
     )
-    _render(volume_result.candidates, "table", "High-Volume Stocks (by volume)", limit=top)
+    _render(volume_result.candidates, output_fmt, "High-Volume Stocks (by volume)", limit=top)
