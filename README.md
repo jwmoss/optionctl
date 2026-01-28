@@ -46,6 +46,20 @@ src/optionctl/
 └── models.py            # Data models (dataclasses)
 ```
 
+## Quick Start
+
+These are the go-to scans:
+
+```bash
+# S&P 500 penny options expiring this week
+uv run optionctl scan --universe sp500 --max-dte 5
+
+# High-volume stocks ranked purely by raw volume, lower volume floor
+uv run optionctl scan --universe volume \
+  --w-vol-oi 0 --w-volume 100 --w-proximity 0 --w-iv 0 \
+  --min-volume 50
+```
+
 ## CLI Usage
 
 ### Scan for penny options
