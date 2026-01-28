@@ -14,7 +14,7 @@ from rich.table import Table
 if TYPE_CHECKING:
     from optionctl.models import OptionCandidate, ScoringWeights
 
-console = Console()
+console = Console(stderr=True)
 
 
 def _make_weights(
