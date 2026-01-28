@@ -220,6 +220,7 @@ def main() -> None:
 )
 @click.option("--limit", type=int, default=_DEFAULT_LIMIT, help="Max candidates to display.")
 @click.option("--all", "show_all", is_flag=True, default=False, help="Show all candidates.")
+@click.option("--workers", type=int, default=8, help="Concurrent threads for scanning.")
 def scan(
     universe: str,
     watchlist_file: str | None,
@@ -237,6 +238,7 @@ def scan(
     refresh: bool,
     limit: int,
     show_all: bool,
+    workers: int,
 ) -> None:
     """Scan for penny OTM call options across a stock universe."""
     from rich.progress import Progress
@@ -262,6 +264,7 @@ def scan(
             min_volume,
             progress_callback=on_progress,
             weights=weights,
+            workers=workers,
         )
 
     console.print(
