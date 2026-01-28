@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import urllib.request
 from pathlib import Path
 
 import pandas as pd
@@ -61,14 +62,42 @@ HIGH_VOLUME_TICKERS: list[str] = [
 ]
 
 
+def _fetch_wikipedia_html(url: str) -> str:
+    """Fetch HTML from Wikipedia with a browser-like User-Agent.
+
+    Wikipedia blocks the default Python urllib User-Agent with HTTP 403.
+    Using a standard browser User-Agent avoids this.
+
+    Args:
+        url: The Wikipedia URL to fetch.
+
+    Returns:
+        The HTML content as a string.
+    """
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": (
+                "Mozilla/5.0 (compatible; optionctl/0.1; "
+                "+https://github.com/jwmoss/optionctl)"
+            ),
+        },
+    )
+    with urllib.request.urlopen(req) as resp:  # noqa: S310
+        return resp.read().decode("utf-8")
+
+
 def get_sp500_tickers() -> list[str]:
     """Fetch S&P 500 component tickers from Wikipedia.
 
     Returns:
         List of ticker symbols for all S&P 500 components.
     """
+    from io import StringIO
+
     url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-    tables = pd.read_html(url)
+    html = _fetch_wikipedia_html(url)
+    tables = pd.read_html(StringIO(html))
     df = tables[0]
     tickers: list[str] = df["Symbol"].tolist()
     # yfinance uses dashes instead of dots (e.g., BRK-B not BRK.B)
