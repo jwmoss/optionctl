@@ -141,10 +141,12 @@ def write_chain_cache(
         _CACHE_DIR.mkdir(parents=True, exist_ok=True)
         path = _CACHE_DIR / f"{ticker.upper()}.json"
 
-        # Convert DataFrames to lists of dicts
+        # Convert DataFrames to lists of dicts (use to_json to handle Timestamps)
         chains_data = {}
         for exp, df in chains.items():
-            chains_data[exp] = df.to_dict(orient="records")
+            # to_json handles pandas Timestamps, then parse back to dict
+            json_str = df.to_json(orient="records")
+            chains_data[exp] = json.loads(json_str) if json_str else []
 
         payload = {
             "timestamp": datetime.now(UTC).isoformat(),
