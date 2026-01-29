@@ -61,6 +61,14 @@ def _render_table(candidates: list[OptionCandidate], title: str) -> None:
         else:
             earn_str = "-"
 
+        # Format proximity/distance display (lower = closer to money = better)
+        if c.proximity_pct < _PROXIMITY_GOOD:
+            dist_str = f"[bold green]{c.proximity_pct:.1f}%[/bold green]"
+        elif c.proximity_pct < _PROXIMITY_MODERATE:
+            dist_str = f"[yellow]{c.proximity_pct:.1f}%[/yellow]"
+        else:
+            dist_str = f"[red]{c.proximity_pct:.1f}%[/red]"
+
         table.add_row(
             c.ticker,
             f"{c.strike:.2f}",
@@ -70,7 +78,7 @@ def _render_table(candidates: list[OptionCandidate], title: str) -> None:
             f"{c.open_interest:,}",
             f"{c.volume_oi_ratio:.1f}",
             f"{c.implied_volatility:.0%}",
-            f"{c.proximity_pct:.1f}%",
+            dist_str,
             earn_str,
             f"{c.score:.1f}",
         )
@@ -145,6 +153,10 @@ def _render_csv(candidates: list[OptionCandidate]) -> None:
 
 
 _DEFAULT_LIMIT = 20
+
+# Proximity thresholds for color coding (lower = closer to money = better)
+_PROXIMITY_GOOD = 15  # Green: < 15% from strike
+_PROXIMITY_MODERATE = 35  # Yellow: 15-35% from strike, Red: > 35%
 
 
 def _render(
