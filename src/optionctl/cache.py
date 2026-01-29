@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_CACHE_DIR = Path.home() / ".config" / "optionctl" / "cache" / "chains"
+_CACHE_DIR = Path.home() / ".cache" / "optionctl" / "chains"
 _ET = ZoneInfo("America/New_York")
 
 

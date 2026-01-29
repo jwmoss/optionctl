@@ -72,7 +72,7 @@ HIGH_VOLUME_TICKERS: list[str] = [
 # Disk-based ticker cache (JSON with TTL)
 # ---------------------------------------------------------------------------
 
-_CACHE_DIR = Path.home() / ".config" / "optionctl" / "cache"
+_CACHE_DIR = Path.home() / ".cache" / "optionctl"
 _DEFAULT_TTL_SECONDS: int = 86_400  # 24 hours
 
 
