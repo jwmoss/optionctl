@@ -32,6 +32,16 @@ All four signals are combined into a configurable composite score to rank candid
 
 Yahoo Finance via `yfinance` (free, sufficient for scanning). Live data managed separately.
 
+### Caching
+
+Option chain data is cached to `~/.cache/optionctl/chains/` to dramatically speed up repeated scans:
+
+- **During market hours**: 5-minute TTL (data refreshes frequently)
+- **After hours/weekends**: Valid until next market open (data doesn't change)
+- **No-options tickers**: Cached to skip silently on future runs
+
+First scan may be slow (~1-2 min for S&P 500), but subsequent runs complete in <1 second.
+
 ## Architecture
 
 ```
@@ -85,6 +95,25 @@ optionctl scan --output json            # Output as JSON
 
 ```bash
 optionctl spy penny                     # Find SPY 0DTE penny calls ($0.01)
+```
+
+### Cache Management
+
+```bash
+optionctl cache status                  # Show cache statistics
+optionctl cache warm --universe sp500   # Pre-fetch S&P 500 option chains
+optionctl cache warm --all              # Fetch all expirations (not just 2 weeks)
+optionctl cache clear                   # Clear all cached data
+```
+
+**Tip**: Run `optionctl cache warm --universe sp500` before your first scan to pre-populate the cache. This makes subsequent scans nearly instant.
+
+### Favorites (Quick Scan)
+
+```bash
+optionctl favorites                     # Run both S&P 500 and high-volume scans
+optionctl favorites --top 5             # Show top 5 from each scan
+optionctl favorites --output json       # Output as JSON
 ```
 
 ### Custom Scoring Weights
