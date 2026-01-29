@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import logging
-import random
 import signal
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, date, datetime
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING
 
 import yfinance as yf
+from tenacity import retry, stop_after_attempt, wait_exponential_jitter
 
 from optionctl.filters import apply_filters, proximity_pct, volume_oi_ratio
 from optionctl.models import OptionCandidate, ScanResult
@@ -23,43 +22,15 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_WORKERS: int = 8
-_MAX_RETRIES: int = 3
-_BASE_DELAY: float = 0.5  # seconds
+_DEFAULT_WORKERS: int = 4
 _interrupted = False
 
-T = TypeVar("T")
-
-
-def _retry_with_backoff(
-    func: Callable[[], T],
-    max_retries: int = _MAX_RETRIES,
-    base_delay: float = _BASE_DELAY,
-) -> T:
-    """Execute a function with exponential backoff retry.
-
-    Args:
-        func: Zero-argument callable to execute.
-        max_retries: Maximum number of retry attempts.
-        base_delay: Base delay in seconds (doubles each retry).
-
-    Returns:
-        Result from the function.
-
-    Raises:
-        Exception: Re-raises the last exception if all retries fail.
-    """
-    last_exception: Exception | None = None
-    for attempt in range(max_retries + 1):
-        try:
-            return func()
-        except Exception as e:
-            last_exception = e
-            if attempt < max_retries:
-                # Exponential backoff with jitter
-                delay = base_delay * (2**attempt) + random.uniform(0, 0.1)  # noqa: S311
-                time.sleep(delay)
-    raise last_exception  # type: ignore[misc]
+# Tenacity retry decorator for yfinance API calls
+_yf_retry = retry(
+    stop=stop_after_attempt(4),
+    wait=wait_exponential_jitter(initial=0.5, max=10, jitter=2),
+    reraise=True,
+)
 
 
 def _handle_sigint(signum: int, frame: object) -> None:  # noqa: ARG001
@@ -112,6 +83,24 @@ def _get_earnings_days(stock: yf.Ticker, today: date) -> int | None:
     return None
 
 
+@_yf_retry
+def _fetch_options(stock: yf.Ticker) -> tuple[str, ...]:
+    """Fetch available option expiration dates with retry."""
+    return stock.options
+
+
+@_yf_retry
+def _fetch_price(stock: yf.Ticker) -> float:
+    """Fetch underlying price with retry."""
+    return float(stock.fast_info.last_price)
+
+
+@_yf_retry
+def _fetch_chain(stock: yf.Ticker, exp_str: str) -> object:
+    """Fetch option chain for a specific expiration with retry."""
+    return stock.option_chain(exp_str)
+
+
 def scan_ticker(  # noqa: C901
     ticker: str,
     min_dte: int = 0,
@@ -136,7 +125,7 @@ def scan_ticker(  # noqa: C901
     """
     try:
         stock = yf.Ticker(ticker)
-        expirations = _retry_with_backoff(lambda: stock.options)
+        expirations = _fetch_options(stock)
     except Exception:
         logger.warning("Failed to fetch options for %s", ticker)
         return []
@@ -149,7 +138,7 @@ def scan_ticker(  # noqa: C901
 
     # Get underlying price
     try:
-        underlying_price = _retry_with_backoff(lambda: float(stock.fast_info.last_price))
+        underlying_price = _fetch_price(stock)
     except Exception:
         logger.warning("Failed to get price for %s", ticker)
         return []
@@ -167,7 +156,7 @@ def scan_ticker(  # noqa: C901
             continue
 
         try:
-            chain = _retry_with_backoff(lambda exp=exp_str: stock.option_chain(exp))
+            chain = _fetch_chain(stock, exp_str)
         except Exception:
             logger.warning("Failed to fetch chain for %s %s", ticker, exp_str)
             continue
