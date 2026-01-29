@@ -30,7 +30,9 @@ def test_scan_ticker_returns_candidates(mock_yf, mock_dt, make_calls_df, make_mo
     )
     mock_yf.Ticker.return_value = make_mock_ticker(150.0, (exp,), {exp: calls})
 
-    result = scan_ticker("TEST", min_dte=0, max_dte=14, max_price=0.01, min_volume=100, use_cache=False)
+    result = scan_ticker(
+        "TEST", min_dte=0, max_dte=14, max_price=0.01, min_volume=100, use_cache=False
+    )
     assert len(result) == 2
     assert result[0].ticker == "TEST"
     assert result[0].strike == 200.0

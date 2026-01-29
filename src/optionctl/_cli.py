@@ -394,3 +394,64 @@ def favorites(top: int, output_fmt: str) -> None:
         f"found {len(volume_result.candidates)} candidates",
     )
     _render(volume_result.candidates, output_fmt, "High-Volume (by volume)", limit=top)
+
+
+# ---------------------------------------------------------------------------
+# Cache management commands
+# ---------------------------------------------------------------------------
+
+
+@main.group()
+def cache() -> None:
+    """Manage the option chain cache."""
+
+
+@cache.command()
+@click.option(
+    "--universe",
+    type=click.Choice(["sp500", "volume"]),
+    default="sp500",
+    help="Universe to warm cache for.",
+)
+@click.option("--workers", type=int, default=4, help="Concurrent threads for fetching.")
+def warm(universe: str, workers: int) -> None:
+    """Pre-fetch and cache option chains for a universe."""
+    from rich.progress import Progress
+
+    from optionctl.scanner import warm_cache
+    from optionctl.universe import get_sp500_tickers, get_top_volume_tickers
+
+    tickers = get_sp500_tickers() if universe == "sp500" else get_top_volume_tickers(50)
+
+    console.print(f"Warming cache for {len(tickers)} tickers...")
+
+    with Progress(console=console) as progress:
+        task = progress.add_task("Fetching...", total=len(tickers))
+
+        def on_progress(ticker: str, current: int, total: int) -> None:
+            progress.update(task, completed=current, description=f"Fetching {ticker}...")
+
+        cached = warm_cache(tickers, progress_callback=on_progress, workers=workers)
+
+    console.print(f"Cached {cached}/{len(tickers)} tickers")
+
+
+@cache.command()
+def clear() -> None:
+    """Clear all cached option chain data."""
+    from optionctl.cache import clear_cache
+
+    count = clear_cache()
+    console.print(f"Cleared {count} cached files")
+
+
+@cache.command()
+def status() -> None:
+    """Show cache statistics."""
+    from optionctl.cache import get_cache_stats
+
+    stats = get_cache_stats()
+    console.print(f"Cached tickers: {stats['count']}")
+    console.print(f"Cache size: {stats['size_mb']} MB")
+    if stats["count"] > 0 and stats["count"] <= 20:  # noqa: PLR2004
+        console.print(f"Tickers: {', '.join(stats['tickers'])}")

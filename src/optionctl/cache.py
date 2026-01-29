@@ -1,8 +1,7 @@
-"""Disk-based caching for scan results with market-aware TTL."""
+"""Disk-based caching for option chain data with market-aware TTL."""
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 from datetime import UTC, datetime, timedelta
@@ -11,11 +10,11 @@ from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 if TYPE_CHECKING:
-    from optionctl.models import OptionCandidate
+    import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-_CACHE_DIR = Path.home() / ".config" / "optionctl" / "cache" / "scans"
+_CACHE_DIR = Path.home() / ".config" / "optionctl" / "cache" / "chains"
 _ET = ZoneInfo("America/New_York")
 
 
@@ -58,48 +57,51 @@ def _is_market_open() -> bool:
     return market_open <= now_et <= market_close
 
 
-def _cache_key(ticker: str, min_dte: int, max_dte: int, max_price: float, min_volume: int) -> str:
-    """Generate a cache key for scan parameters.
+def _is_cache_valid(cached_time: datetime) -> bool:
+    """Check if cached data is still valid based on market hours.
+
+    Args:
+        cached_time: When the data was cached (UTC).
+
+    Returns:
+        True if cache is still valid.
+    """
+    if _is_market_open():
+        # During market hours, 5 minute TTL
+        return datetime.now(UTC) - cached_time <= timedelta(minutes=5)
+
+    # After hours, valid until next market open
+    # But only if cached after previous market close
+    now_et = datetime.now(_ET)
+    cached_et = cached_time.astimezone(_ET)
+
+    # If cached today after 4pm, it's valid until tomorrow's open
+    today_close = now_et.replace(hour=16, minute=0, second=0, microsecond=0)
+    if cached_et.date() == now_et.date() and cached_et >= today_close:
+        return True
+
+    # If it's a weekend and cached on Friday after close, still valid
+    if now_et.weekday() >= 5:  # noqa: PLR2004
+        # Find last Friday
+        days_since_friday = (now_et.weekday() - 4) % 7
+        last_friday = now_et - timedelta(days=days_since_friday)
+        friday_close = last_friday.replace(hour=16, minute=0, second=0, microsecond=0)
+        if cached_et >= friday_close:
+            return True
+
+    return False
+
+
+def read_chain_cache(ticker: str) -> dict | None:
+    """Read cached option chain data for a ticker.
 
     Args:
         ticker: Stock ticker symbol.
-        min_dte: Minimum days to expiration.
-        max_dte: Maximum days to expiration.
-        max_price: Maximum ask price.
-        min_volume: Minimum contract volume.
 
     Returns:
-        Cache key string.
+        Dict with chain data, or None if cache miss/stale.
     """
-    params = f"{ticker}:{min_dte}:{max_dte}:{max_price}:{min_volume}"
-    return hashlib.sha256(params.encode()).hexdigest()[:16]
-
-
-def read_scan_cache(
-    ticker: str,
-    min_dte: int,
-    max_dte: int,
-    max_price: float,
-    min_volume: int,
-) -> list[dict] | None:
-    """Read cached scan results for a ticker.
-
-    Cache is valid:
-    - During market hours: 5 minutes
-    - After market hours: until next market open
-
-    Args:
-        ticker: Stock ticker symbol.
-        min_dte: Minimum days to expiration.
-        max_dte: Maximum days to expiration.
-        max_price: Maximum ask price.
-        min_volume: Minimum contract volume.
-
-    Returns:
-        List of candidate dicts, or None if cache miss/stale.
-    """
-    key = _cache_key(ticker, min_dte, max_dte, max_price, min_volume)
-    path = _CACHE_DIR / f"{key}.json"
+    path = _CACHE_DIR / f"{ticker.upper()}.json"
 
     if not path.exists():
         return None
@@ -108,86 +110,58 @@ def read_scan_cache(
         data = json.loads(path.read_text())
         cached_time = datetime.fromisoformat(data["timestamp"])
 
-        # Determine TTL based on market hours
-        if _is_market_open():
-            # During market hours, 5 minute TTL
-            if datetime.now(UTC) - cached_time > timedelta(minutes=5):
-                logger.debug("Cache expired (market open) for %s", ticker)
-                return None
-        else:
-            # After hours, valid until next market open
-            next_open = _get_next_market_open()
-            if cached_time < next_open - timedelta(days=1):
-                # Cache is from before previous market close
-                logger.debug("Cache expired (after hours) for %s", ticker)
-                return None
+        if not _is_cache_valid(cached_time):
+            logger.debug("Cache expired for %s", ticker)
+            return None
 
-        logger.debug("Cache hit for %s (%d candidates)", ticker, len(data["candidates"]))
-        return data["candidates"]
+        logger.debug("Cache hit for %s", ticker)
     except (json.JSONDecodeError, KeyError, TypeError, OSError, ValueError):
         return None
+    else:
+        return data
 
 
-def write_scan_cache(  # noqa: PLR0913
+def write_chain_cache(
     ticker: str,
-    min_dte: int,
-    max_dte: int,
-    max_price: float,
-    min_volume: int,
-    candidates: list[OptionCandidate],
+    underlying_price: float,
+    expirations: list[str],
+    chains: dict[str, pd.DataFrame],
+    days_to_earnings: int | None = None,
 ) -> None:
-    """Write scan results to cache.
+    """Write option chain data to cache.
 
     Args:
         ticker: Stock ticker symbol.
-        min_dte: Minimum days to expiration.
-        max_dte: Maximum days to expiration.
-        max_price: Maximum ask price.
-        min_volume: Minimum contract volume.
-        candidates: List of option candidates to cache.
+        underlying_price: Current stock price.
+        expirations: List of expiration date strings.
+        chains: Dict mapping expiration to calls DataFrame.
+        days_to_earnings: Days until next earnings, or None.
     """
-    key = _cache_key(ticker, min_dte, max_dte, max_price, min_volume)
-
     try:
         _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        path = _CACHE_DIR / f"{key}.json"
+        path = _CACHE_DIR / f"{ticker.upper()}.json"
 
-        # Serialize candidates to dicts
-        candidate_dicts = [
-            {
-                "ticker": c.ticker,
-                "strike": c.strike,
-                "expiration": c.expiration.isoformat(),
-                "contract_type": c.contract_type,
-                "bid": c.bid,
-                "ask": c.ask,
-                "last_price": c.last_price,
-                "volume": c.volume,
-                "open_interest": c.open_interest,
-                "implied_volatility": c.implied_volatility,
-                "underlying_price": c.underlying_price,
-                "dte": c.dte,
-                "volume_oi_ratio": c.volume_oi_ratio,
-                "proximity_pct": c.proximity_pct,
-                "contract_symbol": c.contract_symbol,
-                "days_to_earnings": c.days_to_earnings,
-            }
-            for c in candidates
-        ]
+        # Convert DataFrames to lists of dicts
+        chains_data = {}
+        for exp, df in chains.items():
+            chains_data[exp] = df.to_dict(orient="records")
 
         payload = {
             "timestamp": datetime.now(UTC).isoformat(),
-            "ticker": ticker,
-            "candidates": candidate_dicts,
+            "ticker": ticker.upper(),
+            "underlying_price": underlying_price,
+            "expirations": expirations,
+            "chains": chains_data,
+            "days_to_earnings": days_to_earnings,
         }
         path.write_text(json.dumps(payload))
-        logger.debug("Cached %d candidates for %s", len(candidates), ticker)
+        logger.debug("Cached chain data for %s", ticker)
     except OSError:
         logger.debug("Failed to write cache for %s", ticker)
 
 
-def clear_scan_cache() -> int:
-    """Clear all scan cache files.
+def clear_cache() -> int:
+    """Clear all cached chain data.
 
     Returns:
         Number of cache files deleted.
@@ -203,3 +177,23 @@ def clear_scan_cache() -> int:
         except OSError:
             pass
     return count
+
+
+def get_cache_stats() -> dict:
+    """Get cache statistics.
+
+    Returns:
+        Dict with cache stats (count, size, tickers).
+    """
+    if not _CACHE_DIR.exists():
+        return {"count": 0, "size_mb": 0.0, "tickers": []}
+
+    files = list(_CACHE_DIR.glob("*.json"))
+    total_size = sum(f.stat().st_size for f in files)
+    tickers = [f.stem for f in files]
+
+    return {
+        "count": len(files),
+        "size_mb": round(total_size / (1024 * 1024), 2),
+        "tickers": sorted(tickers),
+    }

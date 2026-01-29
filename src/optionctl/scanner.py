@@ -8,9 +8,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
+import pandas as pd
 import yfinance as yf
 
-from optionctl.cache import read_scan_cache, write_scan_cache
+from optionctl.cache import read_chain_cache, write_chain_cache
 from optionctl.filters import apply_filters, proximity_pct, volume_oi_ratio
 from optionctl.models import OptionCandidate, ScanResult
 from optionctl.scoring import score_candidates
@@ -76,36 +77,67 @@ def _get_earnings_days(stock: yf.Ticker, today: date) -> int | None:
     return None
 
 
-def _candidate_from_dict(data: dict) -> OptionCandidate:
-    """Reconstruct an OptionCandidate from a cached dict.
+def _fetch_and_cache_ticker(ticker: str, *, fetch_enhanced: bool = True) -> dict | None:
+    """Fetch option chain data for a ticker and cache it.
 
     Args:
-        data: Dictionary with candidate fields.
+        ticker: Stock ticker symbol.
+        fetch_enhanced: Whether to fetch earnings data.
 
     Returns:
-        OptionCandidate instance.
+        Dict with chain data, or None on failure.
     """
-    return OptionCandidate(
-        ticker=data["ticker"],
-        strike=data["strike"],
-        expiration=date.fromisoformat(data["expiration"]),
-        contract_type=data["contract_type"],
-        bid=data["bid"],
-        ask=data["ask"],
-        last_price=data["last_price"],
-        volume=data["volume"],
-        open_interest=data["open_interest"],
-        implied_volatility=data["implied_volatility"],
-        underlying_price=data["underlying_price"],
-        dte=data["dte"],
-        volume_oi_ratio=data["volume_oi_ratio"],
-        proximity_pct=data["proximity_pct"],
-        contract_symbol=data["contract_symbol"],
-        days_to_earnings=data.get("days_to_earnings"),
-    )
+    try:
+        stock = yf.Ticker(ticker)
+        expirations = stock.options
+    except Exception:
+        logger.warning("Failed to fetch options for %s", ticker)
+        return None
+
+    if not expirations:
+        return None
+
+    today = datetime.now(tz=UTC).date()
+
+    # Get underlying price
+    try:
+        info = stock.fast_info
+        underlying_price = float(info.last_price)
+    except Exception:
+        logger.warning("Failed to get price for %s", ticker)
+        return None
+
+    # Fetch earnings
+    days_to_earnings: int | None = None
+    if fetch_enhanced:
+        days_to_earnings = _get_earnings_days(stock, today)
+
+    # Fetch all chains
+    chains: dict[str, pd.DataFrame] = {}
+    for exp_str in expirations:
+        try:
+            chain = stock.option_chain(exp_str)
+            chains[exp_str] = chain.calls
+        except Exception:
+            logger.warning("Failed to fetch chain for %s %s", ticker, exp_str)
+            continue
+
+    if not chains:
+        return None
+
+    # Cache it
+    write_chain_cache(ticker, underlying_price, list(expirations), chains, days_to_earnings)
+
+    return {
+        "ticker": ticker,
+        "underlying_price": underlying_price,
+        "expirations": list(expirations),
+        "chains": {exp: df.to_dict(orient="records") for exp, df in chains.items()},
+        "days_to_earnings": days_to_earnings,
+    }
 
 
-def scan_ticker(  # noqa: C901
+def scan_ticker(
     ticker: str,
     min_dte: int = 0,
     max_dte: int = 14,
@@ -129,52 +161,36 @@ def scan_ticker(  # noqa: C901
     Returns:
         List of qualifying option candidates.
     """
-    # Check cache first
+    # Try cache first
+    data = None
     if use_cache:
-        cached = read_scan_cache(ticker, min_dte, max_dte, max_price, min_volume)
-        if cached is not None:
-            return [_candidate_from_dict(c) for c in cached]
+        data = read_chain_cache(ticker)
 
-    try:
-        stock = yf.Ticker(ticker)
-        expirations = stock.options
-    except Exception:
-        logger.warning("Failed to fetch options for %s", ticker)
-        return []
+    # Fetch if not cached
+    if data is None:
+        data = _fetch_and_cache_ticker(ticker, fetch_enhanced=fetch_enhanced)
 
-    if not expirations:
+    if data is None:
         return []
 
     today = datetime.now(tz=UTC).date()
     candidates: list[OptionCandidate] = []
+    underlying_price = data["underlying_price"]
+    days_to_earnings = data.get("days_to_earnings")
 
-    # Get underlying price
-    try:
-        info = stock.fast_info
-        underlying_price = float(info.last_price)
-    except Exception:
-        logger.warning("Failed to get price for %s", ticker)
-        return []
-
-    # Fetch enhanced data once per ticker
-    days_to_earnings: int | None = None
-    if fetch_enhanced:
-        days_to_earnings = _get_earnings_days(stock, today)
-
-    for exp_str in expirations:
+    for exp_str, chain_records in data["chains"].items():
         exp_date = _parse_expiration(exp_str)
         dte = (exp_date - today).days
 
         if dte < min_dte or dte > max_dte:
             continue
 
-        try:
-            chain = stock.option_chain(exp_str)
-        except Exception:
-            logger.warning("Failed to fetch chain for %s %s", ticker, exp_str)
+        # Convert cached records back to DataFrame
+        df = pd.DataFrame(chain_records)
+        if df.empty:
             continue
 
-        filtered = apply_filters(chain.calls, underlying_price, max_price, min_volume)
+        filtered = apply_filters(df, underlying_price, max_price, min_volume)
 
         for _, row in filtered.iterrows():
             volume = int(row["volume"])
@@ -198,10 +214,6 @@ def scan_ticker(  # noqa: C901
                 days_to_earnings=days_to_earnings,
             )
             candidates.append(candidate)
-
-    # Write to cache
-    if use_cache:
-        write_scan_cache(ticker, min_dte, max_dte, max_price, min_volume, candidates)
 
     return candidates
 
@@ -282,3 +294,49 @@ def scan_universe(
 
     result.candidates = score_candidates(all_candidates, weights)
     return result
+
+
+def warm_cache(
+    tickers: list[str],
+    progress_callback: Callable[[str, int, int], None] | None = None,
+    workers: int = _DEFAULT_WORKERS,
+) -> int:
+    """Pre-fetch and cache option chain data for tickers.
+
+    Args:
+        tickers: List of ticker symbols to cache.
+        progress_callback: Optional callback(ticker, current, total) for progress.
+        workers: Number of concurrent threads.
+
+    Returns:
+        Number of tickers successfully cached.
+    """
+    global _interrupted  # noqa: PLW0603
+    _interrupted = False
+    prev_handler = signal.signal(signal.SIGINT, _handle_sigint)
+
+    cached_count = 0
+    completed_count = 0
+
+    try:
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(_fetch_and_cache_ticker, t): t for t in tickers}
+
+            for future in as_completed(futures):
+                if _interrupted:
+                    for f in futures:
+                        f.cancel()
+                    break
+
+                ticker = futures[future]
+                completed_count += 1
+
+                if progress_callback:
+                    progress_callback(ticker, completed_count, len(tickers))
+
+                if future.result() is not None:
+                    cached_count += 1
+    finally:
+        signal.signal(signal.SIGINT, prev_handler)
+
+    return cached_count
