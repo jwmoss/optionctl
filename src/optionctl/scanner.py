@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import logging
+import random
 import signal
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, date, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 import yfinance as yf
 
@@ -22,7 +24,42 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _DEFAULT_WORKERS: int = 8
+_MAX_RETRIES: int = 3
+_BASE_DELAY: float = 0.5  # seconds
 _interrupted = False
+
+T = TypeVar("T")
+
+
+def _retry_with_backoff(
+    func: Callable[[], T],
+    max_retries: int = _MAX_RETRIES,
+    base_delay: float = _BASE_DELAY,
+) -> T:
+    """Execute a function with exponential backoff retry.
+
+    Args:
+        func: Zero-argument callable to execute.
+        max_retries: Maximum number of retry attempts.
+        base_delay: Base delay in seconds (doubles each retry).
+
+    Returns:
+        Result from the function.
+
+    Raises:
+        Exception: Re-raises the last exception if all retries fail.
+    """
+    last_exception: Exception | None = None
+    for attempt in range(max_retries + 1):
+        try:
+            return func()
+        except Exception as e:
+            last_exception = e
+            if attempt < max_retries:
+                # Exponential backoff with jitter
+                delay = base_delay * (2**attempt) + random.uniform(0, 0.1)  # noqa: S311
+                time.sleep(delay)
+    raise last_exception  # type: ignore[misc]
 
 
 def _handle_sigint(signum: int, frame: object) -> None:  # noqa: ARG001
@@ -99,7 +136,7 @@ def scan_ticker(  # noqa: C901
     """
     try:
         stock = yf.Ticker(ticker)
-        expirations = stock.options
+        expirations = _retry_with_backoff(lambda: stock.options)
     except Exception:
         logger.warning("Failed to fetch options for %s", ticker)
         return []
@@ -112,8 +149,7 @@ def scan_ticker(  # noqa: C901
 
     # Get underlying price
     try:
-        info = stock.fast_info
-        underlying_price = float(info.last_price)
+        underlying_price = _retry_with_backoff(lambda: float(stock.fast_info.last_price))
     except Exception:
         logger.warning("Failed to get price for %s", ticker)
         return []
@@ -131,7 +167,7 @@ def scan_ticker(  # noqa: C901
             continue
 
         try:
-            chain = stock.option_chain(exp_str)
+            chain = _retry_with_backoff(lambda exp=exp_str: stock.option_chain(exp))
         except Exception:
             logger.warning("Failed to fetch chain for %s %s", ticker, exp_str)
             continue
