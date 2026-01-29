@@ -83,37 +83,37 @@ Scans a curated list of ~50 high-volume optionable stocks (AAPL, NVDA, TSLA, AMD
 ### Scan for penny options
 
 ```bash
-optionctl scan                          # Scan S&P 500 for $0.01 OTM calls
-optionctl scan --universe sp500 --max-dte 5  # S&P 500, same-week only
-optionctl scan --universe volume        # Scan top stocks by volume
-optionctl scan --universe watchlist --watchlist-file tickers.txt
-optionctl scan --min-dte 0 --max-dte 5  # Same-week expiration only
-optionctl scan --output json            # Output as JSON
+uv run optionctl scan                          # Scan S&P 500 for $0.01 OTM calls
+uv run optionctl scan --universe sp500 --max-dte 5  # S&P 500, same-week only
+uv run optionctl scan --universe volume        # Scan top stocks by volume
+uv run optionctl scan --universe watchlist --watchlist-file tickers.txt
+uv run optionctl scan --min-dte 0 --max-dte 5  # Same-week expiration only
+uv run optionctl scan --output json            # Output as JSON
 ```
 
 ### SPY 0DTE
 
 ```bash
-optionctl spy penny                     # Find SPY 0DTE penny calls ($0.01)
+uv run optionctl spy penny                     # Find SPY 0DTE penny calls ($0.01)
 ```
 
 ### Cache Management
 
 ```bash
-optionctl cache status                  # Show cache statistics
-optionctl cache warm --universe sp500   # Pre-fetch S&P 500 option chains
-optionctl cache warm --all              # Fetch all expirations (not just 2 weeks)
-optionctl cache clear                   # Clear all cached data
+uv run optionctl cache status                  # Show cache statistics
+uv run optionctl cache warm --universe sp500   # Pre-fetch S&P 500 option chains
+uv run optionctl cache warm --all              # Fetch all expirations (not just 2 weeks)
+uv run optionctl cache clear                   # Clear all cached data
 ```
 
-**Tip**: Run `optionctl cache warm --universe sp500` before your first scan to pre-populate the cache. This makes subsequent scans nearly instant.
+**Tip**: Run `uv run optionctl cache warm --universe sp500` before your first scan to pre-populate the cache. This makes subsequent scans nearly instant.
 
 ### Favorites (Quick Scan)
 
 ```bash
-optionctl favorites                     # Run both S&P 500 and high-volume scans
-optionctl favorites --top 5             # Show top 5 from each scan
-optionctl favorites --output json       # Output as JSON
+uv run optionctl favorites                     # Run both S&P 500 and high-volume scans
+uv run optionctl favorites --top 5             # Show top 5 from each scan
+uv run optionctl favorites --output json       # Output as JSON
 ```
 
 ### Custom Scoring Weights
@@ -121,9 +121,9 @@ optionctl favorites --output json       # Output as JSON
 All weights are tunable via CLI flags. They default to summing to 100:
 
 ```bash
-optionctl scan --w-vol-oi 30 --w-volume 15 --w-proximity 30 --w-iv 25  # defaults
-optionctl scan --w-vol-oi 0 --w-volume 100 --w-proximity 0 --w-iv 0    # pure volume
-optionctl scan --w-vol-oi 10 --w-volume 10 --w-proximity 60 --w-iv 20  # proximity-focused
+uv run optionctl scan --w-vol-oi 30 --w-volume 15 --w-proximity 30 --w-iv 25  # defaults
+uv run optionctl scan --w-vol-oi 0 --w-volume 100 --w-proximity 0 --w-iv 0    # pure volume
+uv run optionctl scan --w-vol-oi 10 --w-volume 10 --w-proximity 60 --w-iv 20  # proximity-focused
 ```
 
 ### Common Flags
