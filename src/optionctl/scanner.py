@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import signal
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
@@ -23,7 +22,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_WORKERS: int = 4
 _interrupted = False
 
 
@@ -226,7 +224,6 @@ def scan_universe(
     min_volume: int = 100,
     progress_callback: Callable[[str, int, int], None] | None = None,
     weights: ScoringWeights | None = None,
-    workers: int = _DEFAULT_WORKERS,
     *,
     fetch_enhanced: bool = True,
     use_cache: bool = True,
@@ -241,7 +238,6 @@ def scan_universe(
         min_volume: Minimum contract volume.
         progress_callback: Optional callback(ticker, current, total) for progress.
         weights: Optional custom scoring weights.
-        workers: Number of concurrent threads for scanning.
         fetch_enhanced: Whether to fetch enhanced signals.
         use_cache: Whether to use disk cache for results.
 
@@ -254,41 +250,29 @@ def scan_universe(
 
     result = ScanResult(tickers_scanned=len(tickers))
     all_candidates: list[OptionCandidate] = []
-    completed_count = 0
 
     try:
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {
-                executor.submit(
-                    scan_ticker,
-                    t,
-                    min_dte,
-                    max_dte,
-                    max_price,
-                    min_volume,
-                    fetch_enhanced=fetch_enhanced,
-                    use_cache=use_cache,
-                ): t
-                for t in tickers
-            }
+        for i, ticker in enumerate(tickers):
+            if _interrupted:
+                logger.info("Scan interrupted after %d/%d tickers", i, len(tickers))
+                result.tickers_scanned = i
+                break
 
-            for future in as_completed(futures):
-                if _interrupted:
-                    for f in futures:
-                        f.cancel()
-                    result.tickers_scanned = completed_count
-                    break
+            if progress_callback:
+                progress_callback(ticker, i + 1, len(tickers))
 
-                ticker = futures[future]
-                completed_count += 1
-
-                if progress_callback:
-                    progress_callback(ticker, completed_count, len(tickers))
-
-                candidates = future.result()
-                if candidates:
-                    result.tickers_with_options += 1
-                    all_candidates.extend(candidates)
+            candidates = scan_ticker(
+                ticker,
+                min_dte,
+                max_dte,
+                max_price,
+                min_volume,
+                fetch_enhanced=fetch_enhanced,
+                use_cache=use_cache,
+            )
+            if candidates:
+                result.tickers_with_options += 1
+                all_candidates.extend(candidates)
     finally:
         signal.signal(signal.SIGINT, prev_handler)
 
@@ -299,14 +283,12 @@ def scan_universe(
 def warm_cache(
     tickers: list[str],
     progress_callback: Callable[[str, int, int], None] | None = None,
-    workers: int = _DEFAULT_WORKERS,
 ) -> int:
     """Pre-fetch and cache option chain data for tickers.
 
     Args:
         tickers: List of ticker symbols to cache.
         progress_callback: Optional callback(ticker, current, total) for progress.
-        workers: Number of concurrent threads.
 
     Returns:
         Number of tickers successfully cached.
@@ -316,26 +298,18 @@ def warm_cache(
     prev_handler = signal.signal(signal.SIGINT, _handle_sigint)
 
     cached_count = 0
-    completed_count = 0
 
     try:
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {executor.submit(_fetch_and_cache_ticker, t): t for t in tickers}
+        for i, ticker in enumerate(tickers):
+            if _interrupted:
+                logger.info("Cache warming interrupted after %d/%d tickers", i, len(tickers))
+                break
 
-            for future in as_completed(futures):
-                if _interrupted:
-                    for f in futures:
-                        f.cancel()
-                    break
+            if progress_callback:
+                progress_callback(ticker, i + 1, len(tickers))
 
-                ticker = futures[future]
-                completed_count += 1
-
-                if progress_callback:
-                    progress_callback(ticker, completed_count, len(tickers))
-
-                if future.result() is not None:
-                    cached_count += 1
+            if _fetch_and_cache_ticker(ticker) is not None:
+                cached_count += 1
     finally:
         signal.signal(signal.SIGINT, prev_handler)
 
