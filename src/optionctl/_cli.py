@@ -319,7 +319,7 @@ def penny(
 
 
 @main.command()
-@click.option("--top", type=int, default=5, help="Number of candidates to show from each scan.")
+@click.option("--top", type=int, default=10, help="Number of candidates to show from each scan.")
 @click.option(
     "--output",
     "output_fmt",
