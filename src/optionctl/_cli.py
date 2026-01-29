@@ -265,6 +265,7 @@ def scan(
             progress_callback=on_progress,
             weights=weights,
             workers=workers,
+            use_cache=not refresh,
         )
 
     console.print(

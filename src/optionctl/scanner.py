@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 import yfinance as yf
 
+from optionctl.cache import read_scan_cache, write_scan_cache
 from optionctl.filters import apply_filters, proximity_pct, volume_oi_ratio
 from optionctl.models import OptionCandidate, ScanResult
 from optionctl.scoring import score_candidates
@@ -75,6 +76,35 @@ def _get_earnings_days(stock: yf.Ticker, today: date) -> int | None:
     return None
 
 
+def _candidate_from_dict(data: dict) -> OptionCandidate:
+    """Reconstruct an OptionCandidate from a cached dict.
+
+    Args:
+        data: Dictionary with candidate fields.
+
+    Returns:
+        OptionCandidate instance.
+    """
+    return OptionCandidate(
+        ticker=data["ticker"],
+        strike=data["strike"],
+        expiration=date.fromisoformat(data["expiration"]),
+        contract_type=data["contract_type"],
+        bid=data["bid"],
+        ask=data["ask"],
+        last_price=data["last_price"],
+        volume=data["volume"],
+        open_interest=data["open_interest"],
+        implied_volatility=data["implied_volatility"],
+        underlying_price=data["underlying_price"],
+        dte=data["dte"],
+        volume_oi_ratio=data["volume_oi_ratio"],
+        proximity_pct=data["proximity_pct"],
+        contract_symbol=data["contract_symbol"],
+        days_to_earnings=data.get("days_to_earnings"),
+    )
+
+
 def scan_ticker(  # noqa: C901
     ticker: str,
     min_dte: int = 0,
@@ -83,6 +113,7 @@ def scan_ticker(  # noqa: C901
     min_volume: int = 100,
     *,
     fetch_enhanced: bool = True,
+    use_cache: bool = True,
 ) -> list[OptionCandidate]:
     """Scan a single ticker for penny OTM call options.
 
@@ -93,10 +124,17 @@ def scan_ticker(  # noqa: C901
         max_price: Maximum ask price (default $0.01).
         min_volume: Minimum contract volume.
         fetch_enhanced: Whether to fetch enhanced signals (earnings, etc.).
+        use_cache: Whether to use disk cache for results.
 
     Returns:
         List of qualifying option candidates.
     """
+    # Check cache first
+    if use_cache:
+        cached = read_scan_cache(ticker, min_dte, max_dte, max_price, min_volume)
+        if cached is not None:
+            return [_candidate_from_dict(c) for c in cached]
+
     try:
         stock = yf.Ticker(ticker)
         expirations = stock.options
@@ -161,6 +199,10 @@ def scan_ticker(  # noqa: C901
             )
             candidates.append(candidate)
 
+    # Write to cache
+    if use_cache:
+        write_scan_cache(ticker, min_dte, max_dte, max_price, min_volume, candidates)
+
     return candidates
 
 
@@ -175,6 +217,7 @@ def scan_universe(
     workers: int = _DEFAULT_WORKERS,
     *,
     fetch_enhanced: bool = True,
+    use_cache: bool = True,
 ) -> ScanResult:
     """Scan multiple tickers for penny option candidates.
 
@@ -188,6 +231,7 @@ def scan_universe(
         weights: Optional custom scoring weights.
         workers: Number of concurrent threads for scanning.
         fetch_enhanced: Whether to fetch enhanced signals.
+        use_cache: Whether to use disk cache for results.
 
     Returns:
         ScanResult with scored candidates and scan metadata.
@@ -211,6 +255,7 @@ def scan_universe(
                     max_price,
                     min_volume,
                     fetch_enhanced=fetch_enhanced,
+                    use_cache=use_cache,
                 ): t
                 for t in tickers
             }
