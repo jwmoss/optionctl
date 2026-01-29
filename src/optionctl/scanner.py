@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import signal
+import time
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
@@ -23,6 +24,53 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _interrupted = False
+
+_MAX_RETRIES = 3
+_RETRY_DELAY = 1.0  # seconds
+
+
+def _fetch_with_retry(ticker: str) -> tuple[yf.Ticker, tuple[str, ...]] | None:
+    """Fetch ticker and options with retry on failure.
+
+    Args:
+        ticker: Stock ticker symbol.
+
+    Returns:
+        Tuple of (Ticker, expirations) or None on failure.
+    """
+    for attempt in range(_MAX_RETRIES):
+        try:
+            stock = yf.Ticker(ticker)
+            expirations = stock.options
+        except Exception:
+            if attempt < _MAX_RETRIES - 1:
+                time.sleep(_RETRY_DELAY * (attempt + 1))
+        else:
+            return stock, expirations
+    logger.warning("Failed to fetch options for %s", ticker)
+    return None
+
+
+def _get_price_with_retry(stock: yf.Ticker, ticker: str) -> float | None:
+    """Get underlying price with retry on failure.
+
+    Args:
+        stock: yfinance Ticker object.
+        ticker: Ticker symbol for logging.
+
+    Returns:
+        Price or None on failure.
+    """
+    for attempt in range(_MAX_RETRIES):
+        try:
+            price = float(stock.fast_info.last_price)
+        except Exception:
+            if attempt < _MAX_RETRIES - 1:
+                time.sleep(_RETRY_DELAY * (attempt + 1))
+        else:
+            return price
+    logger.warning("Failed to get price for %s", ticker)
+    return None
 
 
 def _handle_sigint(signum: int, frame: object) -> None:  # noqa: ARG001
@@ -130,26 +178,21 @@ def _fetch_and_cache_ticker(
     Returns:
         Dict with chain data, or None on failure.
     """
-    try:
-        stock = yf.Ticker(ticker)
-        expirations = stock.options
-    except Exception:
-        logger.warning("Failed to fetch options for %s", ticker)
-        write_no_options_cache(ticker)
-        return None
+    result = _fetch_with_retry(ticker)
+    if result is None:
+        return None  # API error - don't cache, might work later
 
+    stock, expirations = result
+
+    # No options available (not an error, just skip silently)
     if not expirations:
         write_no_options_cache(ticker)
         return None
 
     today = datetime.now(tz=UTC).date()
 
-    # Get underlying price
-    try:
-        info = stock.fast_info
-        underlying_price = float(info.last_price)
-    except Exception:
-        logger.warning("Failed to get price for %s", ticker)
+    underlying_price = _get_price_with_retry(stock, ticker)
+    if underlying_price is None:
         return None
 
     # Fetch earnings
