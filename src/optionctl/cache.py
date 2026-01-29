@@ -162,6 +162,29 @@ def write_chain_cache(
         logger.debug("Failed to write cache for %s", ticker)
 
 
+def write_no_options_cache(ticker: str) -> None:
+    """Cache that a ticker has no options available.
+
+    This prevents repeated failed fetches for tickers without options.
+
+    Args:
+        ticker: Stock ticker symbol.
+    """
+    try:
+        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        path = _CACHE_DIR / f"{ticker.upper()}.json"
+
+        payload = {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "ticker": ticker.upper(),
+            "no_options": True,
+        }
+        path.write_text(json.dumps(payload))
+        logger.debug("Cached no-options marker for %s", ticker)
+    except OSError:
+        logger.debug("Failed to write no-options cache for %s", ticker)
+
+
 def clear_cache() -> int:
     """Clear all cached chain data.
 

@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import pandas as pd
 import yfinance as yf
 
-from optionctl.cache import read_chain_cache, write_chain_cache
+from optionctl.cache import read_chain_cache, write_chain_cache, write_no_options_cache
 from optionctl.filters import apply_filters, proximity_pct, volume_oi_ratio
 from optionctl.models import OptionCandidate, ScanResult
 from optionctl.scoring import score_candidates
@@ -135,9 +135,11 @@ def _fetch_and_cache_ticker(
         expirations = stock.options
     except Exception:
         logger.warning("Failed to fetch options for %s", ticker)
+        write_no_options_cache(ticker)
         return None
 
     if not expirations:
+        write_no_options_cache(ticker)
         return None
 
     today = datetime.now(tz=UTC).date()
@@ -173,6 +175,28 @@ def _fetch_and_cache_ticker(
     }
 
 
+def _get_ticker_data(ticker: str, *, use_cache: bool, fetch_enhanced: bool) -> dict | None:
+    """Get option chain data for a ticker from cache or fetch.
+
+    Args:
+        ticker: Stock ticker symbol.
+        use_cache: Whether to use disk cache.
+        fetch_enhanced: Whether to fetch enhanced signals.
+
+    Returns:
+        Dict with chain data, or None if unavailable/no options.
+    """
+    if use_cache:
+        data = read_chain_cache(ticker)
+        if data is not None:
+            # Return None for no-options markers to signal skip
+            if data.get("no_options"):
+                return None
+            return data
+
+    return _fetch_and_cache_ticker(ticker, fetch_enhanced=fetch_enhanced)
+
+
 def scan_ticker(
     ticker: str,
     min_dte: int = 0,
@@ -197,15 +221,7 @@ def scan_ticker(
     Returns:
         List of qualifying option candidates.
     """
-    # Try cache first
-    data = None
-    if use_cache:
-        data = read_chain_cache(ticker)
-
-    # Fetch if not cached
-    if data is None:
-        data = _fetch_and_cache_ticker(ticker, fetch_enhanced=fetch_enhanced)
-
+    data = _get_ticker_data(ticker, use_cache=use_cache, fetch_enhanced=fetch_enhanced)
     if data is None:
         return []
 
