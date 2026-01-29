@@ -18,12 +18,22 @@ console = Console(stderr=True)
 
 
 def _make_weights(
-    w_vol_oi: float, w_volume: float, w_proximity: float, w_iv: float
+    w_vol_oi: float,
+    w_volume: float,
+    w_proximity: float,
+    w_iv: float,
+    w_earnings: float = 15.0,
 ) -> ScoringWeights:
     """Build a ScoringWeights from CLI flag values."""
     from optionctl.models import ScoringWeights
 
-    return ScoringWeights(vol_oi=w_vol_oi, volume=w_volume, proximity=w_proximity, iv=w_iv)
+    return ScoringWeights(
+        vol_oi=w_vol_oi,
+        volume=w_volume,
+        proximity=w_proximity,
+        iv=w_iv,
+        earnings=w_earnings,
+    )
 
 
 def _render_table(candidates: list[OptionCandidate], title: str) -> None:
@@ -33,26 +43,43 @@ def _render_table(candidates: list[OptionCandidate], title: str) -> None:
     table.add_column("Strike", justify="right")
     table.add_column("Exp", style="green")
     table.add_column("Ask", justify="right", style="yellow")
-    table.add_column("Bid", justify="right")
     table.add_column("Vol", justify="right")
     table.add_column("OI", justify="right")
     table.add_column("Vol/OI", justify="right", style="magenta")
     table.add_column("IV", justify="right")
     table.add_column("Dist%", justify="right")
+    table.add_column("Earn", justify="right", style="yellow")
     table.add_column("Score", justify="right", style="bold green")
 
     for c in candidates:
+        # Format earnings display
+        if c.days_to_earnings is not None:
+            if 0 <= c.days_to_earnings <= c.dte:
+                earn_str = f"[bold red]{c.days_to_earnings}d![/bold red]"
+            else:
+                earn_str = f"{c.days_to_earnings}d"
+        else:
+            earn_str = "-"
+
+        # Format proximity/distance display (lower = closer to money = better)
+        if c.proximity_pct < _PROXIMITY_GOOD:
+            dist_str = f"[bold green]{c.proximity_pct:.1f}%[/bold green]"
+        elif c.proximity_pct < _PROXIMITY_MODERATE:
+            dist_str = f"[yellow]{c.proximity_pct:.1f}%[/yellow]"
+        else:
+            dist_str = f"[red]{c.proximity_pct:.1f}%[/red]"
+
         table.add_row(
             c.ticker,
             f"{c.strike:.2f}",
             c.expiration.isoformat(),
             f"{c.ask:.2f}",
-            f"{c.bid:.2f}",
             f"{c.volume:,}",
             f"{c.open_interest:,}",
             f"{c.volume_oi_ratio:.1f}",
-            f"{c.implied_volatility:.1%}",
-            f"{c.proximity_pct:.1f}%",
+            f"{c.implied_volatility:.0%}",
+            dist_str,
+            earn_str,
             f"{c.score:.1f}",
         )
 
@@ -73,6 +100,8 @@ def _render_json(candidates: list[OptionCandidate]) -> None:
             "volume_oi_ratio": round(c.volume_oi_ratio, 2),
             "implied_volatility": round(c.implied_volatility, 4),
             "proximity_pct": round(c.proximity_pct, 2),
+            "days_to_earnings": c.days_to_earnings,
+            "dte": c.dte,
             "score": round(c.score, 1),
             "contract_symbol": c.contract_symbol,
         }
@@ -96,6 +125,8 @@ def _render_csv(candidates: list[OptionCandidate]) -> None:
             "volume_oi_ratio",
             "implied_volatility",
             "proximity_pct",
+            "days_to_earnings",
+            "dte",
             "score",
             "contract_symbol",
         ]
@@ -113,6 +144,8 @@ def _render_csv(candidates: list[OptionCandidate]) -> None:
                 round(c.volume_oi_ratio, 2),
                 round(c.implied_volatility, 4),
                 round(c.proximity_pct, 2),
+                c.days_to_earnings if c.days_to_earnings is not None else "",
+                c.dte,
                 round(c.score, 1),
                 c.contract_symbol,
             ]
@@ -120,6 +153,10 @@ def _render_csv(candidates: list[OptionCandidate]) -> None:
 
 
 _DEFAULT_LIMIT = 20
+
+# Proximity thresholds for color coding (aligned with scoring logic)
+_PROXIMITY_GOOD = 10  # Green: < 10% (most proximity points)
+_PROXIMITY_MODERATE = 20  # Yellow: 10-20% (partial points), Red: > 20% (zero points)
 
 
 def _render(
@@ -173,10 +210,11 @@ def main() -> None:
     default="table",
     help="Output format.",
 )
-@click.option("--w-vol-oi", type=float, default=30.0, help="Scoring weight: volume/OI ratio.")
+@click.option("--w-vol-oi", type=float, default=25.0, help="Scoring weight: volume/OI ratio.")
 @click.option("--w-volume", type=float, default=15.0, help="Scoring weight: raw volume.")
-@click.option("--w-proximity", type=float, default=30.0, help="Scoring weight: strike proximity.")
-@click.option("--w-iv", type=float, default=25.0, help="Scoring weight: implied volatility.")
+@click.option("--w-proximity", type=float, default=25.0, help="Scoring weight: strike proximity.")
+@click.option("--w-iv", type=float, default=20.0, help="Scoring weight: implied volatility.")
+@click.option("--w-earnings", type=float, default=15.0, help="Scoring weight: earnings catalyst.")
 @click.option(
     "--refresh", is_flag=True, default=False, help="Bypass ticker cache and fetch fresh data."
 )
@@ -195,6 +233,7 @@ def scan(
     w_volume: float,
     w_proximity: float,
     w_iv: float,
+    w_earnings: float,
     refresh: bool,
     limit: int,
     show_all: bool,
@@ -205,7 +244,7 @@ def scan(
     from optionctl.scanner import scan_universe
     from optionctl.universe import get_tickers
 
-    weights = _make_weights(w_vol_oi, w_volume, w_proximity, w_iv)
+    weights = _make_weights(w_vol_oi, w_volume, w_proximity, w_iv, w_earnings)
     tickers = get_tickers(universe, watchlist_file, top_n, use_cache=not refresh)
     console.print(f"Scanning {len(tickers)} tickers ({universe})...")
 
@@ -223,6 +262,7 @@ def scan(
             min_volume,
             progress_callback=on_progress,
             weights=weights,
+            use_cache=not refresh,
         )
 
     console.print(
@@ -251,10 +291,10 @@ def spy() -> None:
     default="table",
     help="Output format.",
 )
-@click.option("--w-vol-oi", type=float, default=30.0, help="Scoring weight: volume/OI ratio.")
+@click.option("--w-vol-oi", type=float, default=25.0, help="Scoring weight: volume/OI ratio.")
 @click.option("--w-volume", type=float, default=15.0, help="Scoring weight: raw volume.")
-@click.option("--w-proximity", type=float, default=30.0, help="Scoring weight: strike proximity.")
-@click.option("--w-iv", type=float, default=25.0, help="Scoring weight: implied volatility.")
+@click.option("--w-proximity", type=float, default=25.0, help="Scoring weight: strike proximity.")
+@click.option("--w-iv", type=float, default=20.0, help="Scoring weight: implied volatility.")
 @click.option("--limit", type=int, default=_DEFAULT_LIMIT, help="Max candidates to display.")
 @click.option("--all", "show_all", is_flag=True, default=False, help="Show all candidates.")
 def penny(
@@ -271,7 +311,7 @@ def penny(
     """Find SPY 0DTE penny call options."""
     from optionctl.spy import find_penny_0dte
 
-    weights = _make_weights(w_vol_oi, w_volume, w_proximity, w_iv)
+    weights = _make_weights(w_vol_oi, w_volume, w_proximity, w_iv, w_earnings=0)
     console.print("Scanning SPY 0DTE for penny calls...")
     candidates = find_penny_0dte(max_price, min_volume, weights)
     console.print(f"Found {len(candidates)} candidates")
@@ -279,7 +319,7 @@ def penny(
 
 
 @main.command()
-@click.option("--top", type=int, default=5, help="Number of candidates to show from each scan.")
+@click.option("--top", type=int, default=10, help="Number of candidates to show from each scan.")
 @click.option(
     "--output",
     "output_fmt",
@@ -294,8 +334,8 @@ def favorites(top: int, output_fmt: str) -> None:
     from optionctl.scanner import scan_universe
     from optionctl.universe import get_sp500_tickers, get_top_volume_tickers
 
-    # S&P 500 scan with default balanced weights
-    sp500_weights = _make_weights(w_vol_oi=30, w_volume=15, w_proximity=30, w_iv=25)
+    # S&P 500 scan with balanced weights including earnings
+    sp500_weights = _make_weights(w_vol_oi=25, w_volume=15, w_proximity=25, w_iv=20, w_earnings=15)
     sp500_tickers = get_sp500_tickers()
     console.print(f"Scanning {len(sp500_tickers)} S&P 500 tickers...")
 
@@ -320,12 +360,12 @@ def favorites(top: int, output_fmt: str) -> None:
         f"{sp500_result.tickers_with_options} had options, "
         f"found {len(sp500_result.candidates)} candidates",
     )
-    _render(sp500_result.candidates, output_fmt, "S&P 500 (balanced scoring, max 5 DTE)", limit=top)
+    _render(sp500_result.candidates, output_fmt, "S&P 500 (balanced, max 5 DTE)", limit=top)
 
     console.print()
 
-    # High-volume stocks scan with pure volume weights
-    volume_weights = _make_weights(w_vol_oi=0, w_volume=100, w_proximity=0, w_iv=0)
+    # High-volume stocks scan with volume-focused weights
+    volume_weights = _make_weights(w_vol_oi=0, w_volume=100, w_proximity=0, w_iv=0, w_earnings=0)
     volume_tickers = get_top_volume_tickers(50)
     console.print(f"Scanning {len(volume_tickers)} high-volume tickers...")
 
@@ -350,4 +390,71 @@ def favorites(top: int, output_fmt: str) -> None:
         f"{volume_result.tickers_with_options} had options, "
         f"found {len(volume_result.candidates)} candidates",
     )
-    _render(volume_result.candidates, output_fmt, "High-Volume Stocks (by volume)", limit=top)
+    _render(volume_result.candidates, output_fmt, "High-Volume (by volume)", limit=top)
+
+
+# ---------------------------------------------------------------------------
+# Cache management commands
+# ---------------------------------------------------------------------------
+
+
+@main.group()
+def cache() -> None:
+    """Manage the option chain cache."""
+
+
+@cache.command()
+@click.option(
+    "--universe",
+    type=click.Choice(["sp500", "volume"]),
+    default="sp500",
+    help="Universe to warm cache for.",
+)
+@click.option(
+    "--all",
+    "fetch_all",
+    is_flag=True,
+    default=False,
+    help="Cache all expirations (not just 2 weeks).",
+)
+def warm(universe: str, *, fetch_all: bool) -> None:
+    """Pre-fetch and cache option chains for a universe."""
+    from rich.progress import Progress
+
+    from optionctl.scanner import warm_cache
+    from optionctl.universe import get_sp500_tickers, get_top_volume_tickers
+
+    tickers = get_sp500_tickers() if universe == "sp500" else get_top_volume_tickers(50)
+
+    console.print(f"Warming cache for {len(tickers)} tickers...")
+
+    with Progress(console=console) as progress:
+        task = progress.add_task("Fetching...", total=len(tickers))
+
+        def on_progress(ticker: str, current: int, total: int) -> None:
+            progress.update(task, completed=current, description=f"Fetching {ticker}...")
+
+        cached = warm_cache(tickers, progress_callback=on_progress, max_dte=0 if fetch_all else 14)
+
+    console.print(f"Cached {cached}/{len(tickers)} tickers")
+
+
+@cache.command()
+def clear() -> None:
+    """Clear all cached option chain data."""
+    from optionctl.cache import clear_cache
+
+    count = clear_cache()
+    console.print(f"Cleared {count} cached files")
+
+
+@cache.command()
+def status() -> None:
+    """Show cache statistics."""
+    from optionctl.cache import get_cache_stats
+
+    stats = get_cache_stats()
+    console.print(f"Cached tickers: {stats['count']}")
+    console.print(f"Cache size: {stats['size_mb']} MB")
+    if stats["count"] > 0 and stats["count"] <= 20:  # noqa: PLR2004
+        console.print(f"Tickers: {', '.join(stats['tickers'])}")

@@ -4,12 +4,14 @@ import pytest
 
 from optionctl.models import ScoringWeights
 from optionctl.scoring import (
+    DEFAULT_WEIGHT_EARNINGS,
     DEFAULT_WEIGHT_IV,
     DEFAULT_WEIGHT_PROXIMITY,
     DEFAULT_WEIGHT_VOL_OI,
     DEFAULT_WEIGHT_VOLUME,
     compute_score,
     score_candidates,
+    score_earnings,
     score_iv,
     score_proximity,
     score_volume,
@@ -80,27 +82,52 @@ def test_score_iv(iv, expected):
     assert score_iv(iv) == expected
 
 
+@pytest.mark.parametrize(
+    ("days_to_earn", "dte", "weight", "expected"),
+    [
+        (2, 5, DEFAULT_WEIGHT_EARNINGS, DEFAULT_WEIGHT_EARNINGS),  # earnings before expiry
+        (5, 5, DEFAULT_WEIGHT_EARNINGS, DEFAULT_WEIGHT_EARNINGS),  # earnings on expiry day
+        (0, 5, DEFAULT_WEIGHT_EARNINGS, DEFAULT_WEIGHT_EARNINGS),  # earnings today
+        (10, 5, DEFAULT_WEIGHT_EARNINGS, 0.0),  # earnings after expiry
+        (-1, 5, DEFAULT_WEIGHT_EARNINGS, 0.0),  # earnings already passed
+        (None, 5, DEFAULT_WEIGHT_EARNINGS, 0.0),  # unknown earnings
+        (2, 5, 0.0, 0.0),  # weight disabled
+    ],
+    ids=["before-expiry", "on-expiry", "today", "after-expiry", "passed", "unknown", "disabled"],
+)
+def test_score_earnings(days_to_earn, dte, weight, expected):
+    assert score_earnings(days_to_earn, dte, weight=weight) == expected
+
+
 # ---------------------------------------------------------------------------
 # compute_score
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
-    ("vol_oi", "volume", "prox", "iv", "weights", "expected"),
+    ("vol_oi", "volume", "prox", "iv", "earn", "dte", "weights", "expected"),
     [
-        (5.0, 5000, 0.0, 2.0, None, 100.0),
-        (0.0, 0, 20.0, 0.0, None, 0.0),
-        (5.0, 5000, 0.0, 2.0, ScoringWeights(50.0, 0.0, 50.0, 0.0), 100.0),
-        (5.0, 2500, 0.0, 2.0, ScoringWeights(0.0, 100.0, 0.0, 0.0), 50.0),
+        # Perfect score with earnings before expiry
+        (5.0, 5000, 0.0, 2.0, 2, 5, None, 100.0),
+        # Zero across the board
+        (0.0, 0, 20.0, 0.0, None, 5, None, 0.0),
+        # Without earnings signal
+        (5.0, 5000, 0.0, 2.0, None, 5, None, 85.0),
+        # Custom weights ignoring earnings
+        (5.0, 5000, 0.0, 2.0, 2, 5, ScoringWeights(50.0, 0.0, 50.0, 0.0, 0.0), 100.0),
+        # Volume-only scoring
+        (5.0, 2500, 0.0, 2.0, None, 5, ScoringWeights(0.0, 100.0, 0.0, 0.0, 0.0), 50.0),
     ],
-    ids=["perfect-defaults", "zero-all", "custom-weights", "volume-heavy"],
+    ids=["perfect-all", "zero-all", "no-earnings", "custom-weights", "volume-heavy"],
 )
-def test_compute_score(vol_oi, volume, prox, iv, weights, expected):
+def test_compute_score(vol_oi, volume, prox, iv, earn, dte, weights, expected):
     score = compute_score(
         vol_oi_ratio=vol_oi,
         volume=volume,
         proximity_pct=prox,
         implied_volatility=iv,
+        days_to_earnings=earn,
+        dte=dte,
         weights=weights,
     )
     assert score == expected
@@ -113,7 +140,13 @@ def test_compute_score(vol_oi, volume, prox, iv, weights, expected):
 
 def test_score_candidates_sorts_descending(make_candidate):
     c1 = make_candidate(volume_oi_ratio=1.0, proximity_pct=15.0, implied_volatility=0.5, volume=100)
-    c2 = make_candidate(volume_oi_ratio=5.0, proximity_pct=0.0, implied_volatility=2.0, volume=5000)
+    c2 = make_candidate(
+        volume_oi_ratio=5.0,
+        proximity_pct=0.0,
+        implied_volatility=2.0,
+        volume=5000,
+        days_to_earnings=2,  # earnings before expiry (dte=3 default)
+    )
     c3 = make_candidate(
         volume_oi_ratio=2.5, proximity_pct=10.0, implied_volatility=1.0, volume=2500
     )

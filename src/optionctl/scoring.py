@@ -13,11 +13,12 @@ MAX_VOLUME = 5000.0
 MAX_PROXIMITY_PCT = 20.0
 MAX_IV = 2.0
 
-# Default weights
-DEFAULT_WEIGHT_VOL_OI = 30.0
+# Default weights (sum to 100)
+DEFAULT_WEIGHT_VOL_OI = 25.0
 DEFAULT_WEIGHT_VOLUME = 15.0
-DEFAULT_WEIGHT_PROXIMITY = 30.0
-DEFAULT_WEIGHT_IV = 25.0
+DEFAULT_WEIGHT_PROXIMITY = 25.0
+DEFAULT_WEIGHT_IV = 20.0
+DEFAULT_WEIGHT_EARNINGS = 15.0
 
 
 def score_volume_oi(vol_oi_ratio: float, weight: float = DEFAULT_WEIGHT_VOL_OI) -> float:
@@ -84,47 +85,78 @@ def score_iv(implied_volatility: float, weight: float = DEFAULT_WEIGHT_IV) -> fl
     return normalized * weight
 
 
-def compute_score(
+def score_earnings(
+    days_to_earnings: int | None, dte: int, weight: float = DEFAULT_WEIGHT_EARNINGS
+) -> float:
+    """Score based on earnings proximity.
+
+    Full points if earnings falls before option expiration (catalyst play).
+    No points if earnings is after expiration or unknown.
+
+    Args:
+        days_to_earnings: Days until next earnings, or None if unknown.
+        dte: Days to expiration for the option.
+        weight: Maximum points for this component.
+
+    Returns:
+        Weighted score component.
+    """
+    if days_to_earnings is None or weight <= 0:
+        return 0.0
+    if 0 <= days_to_earnings <= dte:
+        return weight  # earnings before expiry = full points
+    return 0.0
+
+
+def compute_score(  # noqa: PLR0913
     vol_oi_ratio: float,
     volume: int,
     proximity_pct: float,
     implied_volatility: float,
+    days_to_earnings: int | None = None,
+    dte: int = 0,
     weights: ScoringWeights | None = None,
 ) -> float:
     """Compute composite score for an option candidate.
 
-    The score combines four signals:
-    - Volume/OI ratio: unusual activity
+    The score combines multiple signals:
+    - Volume/OI ratio: unusual activity relative to open interest
     - Raw volume: liquidity and conviction
     - Proximity to strike: likelihood of going ITM
     - Implied volatility: expected move size
+    - Earnings: catalyst before expiration
 
     Args:
         vol_oi_ratio: Volume divided by open interest.
         volume: Raw contract volume.
         proximity_pct: Distance from strike to underlying as a percentage.
         implied_volatility: IV as a decimal.
+        days_to_earnings: Days until earnings, or None.
+        dte: Days to expiration.
         weights: Optional custom weights. Uses defaults if None.
 
     Returns:
-        Composite score (0 to sum of weights, default 100).
+        Composite score (0 to sum of weights).
     """
     if weights is None:
         w_vol_oi = DEFAULT_WEIGHT_VOL_OI
         w_volume = DEFAULT_WEIGHT_VOLUME
         w_proximity = DEFAULT_WEIGHT_PROXIMITY
         w_iv = DEFAULT_WEIGHT_IV
+        w_earnings = DEFAULT_WEIGHT_EARNINGS
     else:
         w_vol_oi = weights.vol_oi
         w_volume = weights.volume
         w_proximity = weights.proximity
         w_iv = weights.iv
+        w_earnings = weights.earnings
 
     return (
         score_volume_oi(vol_oi_ratio, w_vol_oi)
         + score_volume(volume, w_volume)
         + score_proximity(proximity_pct, w_proximity)
         + score_iv(implied_volatility, w_iv)
+        + score_earnings(days_to_earnings, dte, w_earnings)
     )
 
 
@@ -143,6 +175,12 @@ def score_candidates(
     """
     for c in candidates:
         c.score = compute_score(
-            c.volume_oi_ratio, c.volume, c.proximity_pct, c.implied_volatility, weights
+            vol_oi_ratio=c.volume_oi_ratio,
+            volume=c.volume,
+            proximity_pct=c.proximity_pct,
+            implied_volatility=c.implied_volatility,
+            days_to_earnings=c.days_to_earnings,
+            dte=c.dte,
+            weights=weights,
         )
     return sorted(candidates, key=lambda c: c.score, reverse=True)

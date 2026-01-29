@@ -30,7 +30,9 @@ def test_scan_ticker_returns_candidates(mock_yf, mock_dt, make_calls_df, make_mo
     )
     mock_yf.Ticker.return_value = make_mock_ticker(150.0, (exp,), {exp: calls})
 
-    result = scan_ticker("TEST", min_dte=0, max_dte=14, max_price=0.01, min_volume=100)
+    result = scan_ticker(
+        "TEST", min_dte=0, max_dte=14, max_price=0.01, min_volume=100, use_cache=False
+    )
     assert len(result) == 2
     assert result[0].ticker == "TEST"
     assert result[0].strike == 200.0
@@ -45,7 +47,7 @@ def test_scan_ticker_filters_by_dte(mock_yf, mock_dt, make_calls_df, make_mock_t
     calls = make_calls_df(strikes=[200.0])
     mock_yf.Ticker.return_value = make_mock_ticker(150.0, (exp,), {exp: calls})
 
-    result = scan_ticker("TEST", min_dte=0, max_dte=14)
+    result = scan_ticker("TEST", min_dte=0, max_dte=14, use_cache=False)
     assert len(result) == 0
 
 
@@ -82,7 +84,7 @@ def test_scan_ticker_error_scenarios(mock_yf, mock_dt, setup, ticker):
         mock.option_chain.side_effect = RuntimeError("Chain error")
         mock_yf.Ticker.return_value = mock
 
-    assert scan_ticker(ticker) == []
+    assert scan_ticker(ticker, use_cache=False) == []
 
 
 # ---------------------------------------------------------------------------
