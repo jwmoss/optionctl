@@ -154,9 +154,9 @@ def _render_csv(candidates: list[OptionCandidate]) -> None:
 
 _DEFAULT_LIMIT = 20
 
-# Proximity thresholds for color coding (lower = closer to money = better)
-_PROXIMITY_GOOD = 15  # Green: < 15% from strike
-_PROXIMITY_MODERATE = 35  # Yellow: 15-35% from strike, Red: > 35%
+# Proximity thresholds for color coding (aligned with scoring logic)
+_PROXIMITY_GOOD = 10  # Green: < 10% (most proximity points)
+_PROXIMITY_MODERATE = 20  # Yellow: 10-20% (partial points), Red: > 20% (zero points)
 
 
 def _render(
