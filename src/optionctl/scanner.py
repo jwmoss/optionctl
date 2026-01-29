@@ -75,12 +75,57 @@ def _get_earnings_days(stock: yf.Ticker, today: date) -> int | None:
     return None
 
 
-def _fetch_and_cache_ticker(ticker: str, *, fetch_enhanced: bool = True) -> dict | None:
+_DEFAULT_MAX_DTE = 14
+
+
+def _fetch_chains_within_dte(
+    stock: yf.Ticker,
+    expirations: tuple[str, ...],
+    today: date,
+    max_dte: int,
+) -> tuple[list[str], dict[str, pd.DataFrame]]:
+    """Fetch option chains filtered by DTE.
+
+    Args:
+        stock: yfinance Ticker object.
+        expirations: Available expiration dates.
+        today: Current date.
+        max_dte: Maximum DTE to fetch (0 for all).
+
+    Returns:
+        Tuple of (filtered_expirations, chains dict).
+    """
+    chains: dict[str, pd.DataFrame] = {}
+    filtered_expirations: list[str] = []
+
+    for exp_str in expirations:
+        exp_date = _parse_expiration(exp_str)
+        dte = (exp_date - today).days
+
+        # Skip if beyond max_dte (unless max_dte is 0 meaning fetch all)
+        if max_dte > 0 and dte > max_dte:
+            continue
+
+        filtered_expirations.append(exp_str)
+        try:
+            chain = stock.option_chain(exp_str)
+            chains[exp_str] = chain.calls
+        except Exception:
+            logger.warning("Failed to fetch chain for %s %s", stock.ticker, exp_str)
+            continue
+
+    return filtered_expirations, chains
+
+
+def _fetch_and_cache_ticker(
+    ticker: str, *, fetch_enhanced: bool = True, max_dte: int = _DEFAULT_MAX_DTE
+) -> dict | None:
     """Fetch option chain data for a ticker and cache it.
 
     Args:
         ticker: Stock ticker symbol.
         fetch_enhanced: Whether to fetch earnings data.
+        max_dte: Maximum days to expiration to fetch (0 for all).
 
     Returns:
         Dict with chain data, or None on failure.
@@ -110,26 +155,19 @@ def _fetch_and_cache_ticker(ticker: str, *, fetch_enhanced: bool = True) -> dict
     if fetch_enhanced:
         days_to_earnings = _get_earnings_days(stock, today)
 
-    # Fetch all chains
-    chains: dict[str, pd.DataFrame] = {}
-    for exp_str in expirations:
-        try:
-            chain = stock.option_chain(exp_str)
-            chains[exp_str] = chain.calls
-        except Exception:
-            logger.warning("Failed to fetch chain for %s %s", ticker, exp_str)
-            continue
+    # Fetch chains (filtered by max_dte if specified)
+    filtered_expirations, chains = _fetch_chains_within_dte(stock, expirations, today, max_dte)
 
     if not chains:
         return None
 
     # Cache it
-    write_chain_cache(ticker, underlying_price, list(expirations), chains, days_to_earnings)
+    write_chain_cache(ticker, underlying_price, filtered_expirations, chains, days_to_earnings)
 
     return {
         "ticker": ticker,
         "underlying_price": underlying_price,
-        "expirations": list(expirations),
+        "expirations": filtered_expirations,
         "chains": {exp: df.to_dict(orient="records") for exp, df in chains.items()},
         "days_to_earnings": days_to_earnings,
     }
@@ -283,12 +321,14 @@ def scan_universe(
 def warm_cache(
     tickers: list[str],
     progress_callback: Callable[[str, int, int], None] | None = None,
+    max_dte: int = _DEFAULT_MAX_DTE,
 ) -> int:
     """Pre-fetch and cache option chain data for tickers.
 
     Args:
         tickers: List of ticker symbols to cache.
         progress_callback: Optional callback(ticker, current, total) for progress.
+        max_dte: Maximum days to expiration to fetch (0 for all).
 
     Returns:
         Number of tickers successfully cached.
@@ -308,7 +348,7 @@ def warm_cache(
             if progress_callback:
                 progress_callback(ticker, i + 1, len(tickers))
 
-            if _fetch_and_cache_ticker(ticker) is not None:
+            if _fetch_and_cache_ticker(ticker, max_dte=max_dte) is not None:
                 cached_count += 1
     finally:
         signal.signal(signal.SIGINT, prev_handler)

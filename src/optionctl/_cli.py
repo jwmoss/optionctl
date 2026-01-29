@@ -410,7 +410,14 @@ def cache() -> None:
     default="sp500",
     help="Universe to warm cache for.",
 )
-def warm(universe: str) -> None:
+@click.option(
+    "--all",
+    "fetch_all",
+    is_flag=True,
+    default=False,
+    help="Cache all expirations (not just 2 weeks).",
+)
+def warm(universe: str, *, fetch_all: bool) -> None:
     """Pre-fetch and cache option chains for a universe."""
     from rich.progress import Progress
 
@@ -427,7 +434,7 @@ def warm(universe: str) -> None:
         def on_progress(ticker: str, current: int, total: int) -> None:
             progress.update(task, completed=current, description=f"Fetching {ticker}...")
 
-        cached = warm_cache(tickers, progress_callback=on_progress)
+        cached = warm_cache(tickers, progress_callback=on_progress, max_dte=0 if fetch_all else 14)
 
     console.print(f"Cached {cached}/{len(tickers)} tickers")
 
