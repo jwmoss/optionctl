@@ -22,9 +22,7 @@ def _make_weights(
     w_volume: float,
     w_proximity: float,
     w_iv: float,
-    w_delta: float = 10.0,
-    w_unusual: float = 10.0,
-    w_earnings: float = 0.0,
+    w_earnings: float = 15.0,
 ) -> ScoringWeights:
     """Build a ScoringWeights from CLI flag values."""
     from optionctl.models import ScoringWeights
@@ -34,8 +32,6 @@ def _make_weights(
         volume=w_volume,
         proximity=w_proximity,
         iv=w_iv,
-        delta=w_delta,
-        unusual_volume=w_unusual,
         earnings=w_earnings,
     )
 
@@ -52,32 +48,18 @@ def _render_table(candidates: list[OptionCandidate], title: str) -> None:
     table.add_column("Vol/OI", justify="right", style="magenta")
     table.add_column("IV", justify="right")
     table.add_column("Dist%", justify="right")
-    table.add_column("Delta", justify="right", style="blue")
-    table.add_column("Vol/Avg", justify="right", style="red")
     table.add_column("Earn", justify="right", style="yellow")
     table.add_column("Score", justify="right", style="bold green")
 
     for c in candidates:
         # Format earnings display
         if c.days_to_earnings is not None:
-            if c.days_to_earnings <= c.dte:
+            if 0 <= c.days_to_earnings <= c.dte:
                 earn_str = f"[bold red]{c.days_to_earnings}d![/bold red]"
             else:
                 earn_str = f"{c.days_to_earnings}d"
         else:
             earn_str = "-"
-
-        # Format vol/avg display (thresholds for highlighting)
-        vol_avg_high = 5.0
-        vol_avg_med = 2.0
-        if c.volume_vs_avg >= vol_avg_high:
-            vol_avg_str = f"[bold red]{c.volume_vs_avg:.1f}x[/bold red]"
-        elif c.volume_vs_avg >= vol_avg_med:
-            vol_avg_str = f"[yellow]{c.volume_vs_avg:.1f}x[/yellow]"
-        elif c.volume_vs_avg > 0:
-            vol_avg_str = f"{c.volume_vs_avg:.1f}x"
-        else:
-            vol_avg_str = "-"
 
         table.add_row(
             c.ticker,
@@ -89,8 +71,6 @@ def _render_table(candidates: list[OptionCandidate], title: str) -> None:
             f"{c.volume_oi_ratio:.1f}",
             f"{c.implied_volatility:.0%}",
             f"{c.proximity_pct:.1f}%",
-            f"{c.delta:.2f}" if c.delta > 0 else "-",
-            vol_avg_str,
             earn_str,
             f"{c.score:.1f}",
         )
@@ -112,8 +92,6 @@ def _render_json(candidates: list[OptionCandidate]) -> None:
             "volume_oi_ratio": round(c.volume_oi_ratio, 2),
             "implied_volatility": round(c.implied_volatility, 4),
             "proximity_pct": round(c.proximity_pct, 2),
-            "delta": round(c.delta, 3),
-            "volume_vs_avg": round(c.volume_vs_avg, 2),
             "days_to_earnings": c.days_to_earnings,
             "dte": c.dte,
             "score": round(c.score, 1),
@@ -139,8 +117,6 @@ def _render_csv(candidates: list[OptionCandidate]) -> None:
             "volume_oi_ratio",
             "implied_volatility",
             "proximity_pct",
-            "delta",
-            "volume_vs_avg",
             "days_to_earnings",
             "dte",
             "score",
@@ -160,8 +136,6 @@ def _render_csv(candidates: list[OptionCandidate]) -> None:
                 round(c.volume_oi_ratio, 2),
                 round(c.implied_volatility, 4),
                 round(c.proximity_pct, 2),
-                round(c.delta, 3),
-                round(c.volume_vs_avg, 2),
                 c.days_to_earnings if c.days_to_earnings is not None else "",
                 c.dte,
                 round(c.score, 1),
@@ -225,12 +199,10 @@ def main() -> None:
     help="Output format.",
 )
 @click.option("--w-vol-oi", type=float, default=25.0, help="Scoring weight: volume/OI ratio.")
-@click.option("--w-volume", type=float, default=10.0, help="Scoring weight: raw volume.")
+@click.option("--w-volume", type=float, default=15.0, help="Scoring weight: raw volume.")
 @click.option("--w-proximity", type=float, default=25.0, help="Scoring weight: strike proximity.")
 @click.option("--w-iv", type=float, default=20.0, help="Scoring weight: implied volatility.")
-@click.option("--w-delta", type=float, default=10.0, help="Scoring weight: delta (probability).")
-@click.option("--w-unusual", type=float, default=10.0, help="Scoring weight: unusual volume.")
-@click.option("--w-earnings", type=float, default=0.0, help="Scoring weight: earnings catalyst.")
+@click.option("--w-earnings", type=float, default=15.0, help="Scoring weight: earnings catalyst.")
 @click.option(
     "--refresh", is_flag=True, default=False, help="Bypass ticker cache and fetch fresh data."
 )
@@ -249,8 +221,6 @@ def scan(
     w_volume: float,
     w_proximity: float,
     w_iv: float,
-    w_delta: float,
-    w_unusual: float,
     w_earnings: float,
     refresh: bool,
     limit: int,
@@ -262,7 +232,7 @@ def scan(
     from optionctl.scanner import scan_universe
     from optionctl.universe import get_tickers
 
-    weights = _make_weights(w_vol_oi, w_volume, w_proximity, w_iv, w_delta, w_unusual, w_earnings)
+    weights = _make_weights(w_vol_oi, w_volume, w_proximity, w_iv, w_earnings)
     tickers = get_tickers(universe, watchlist_file, top_n, use_cache=not refresh)
     console.print(f"Scanning {len(tickers)} tickers ({universe})...")
 
@@ -309,11 +279,9 @@ def spy() -> None:
     help="Output format.",
 )
 @click.option("--w-vol-oi", type=float, default=25.0, help="Scoring weight: volume/OI ratio.")
-@click.option("--w-volume", type=float, default=10.0, help="Scoring weight: raw volume.")
+@click.option("--w-volume", type=float, default=15.0, help="Scoring weight: raw volume.")
 @click.option("--w-proximity", type=float, default=25.0, help="Scoring weight: strike proximity.")
 @click.option("--w-iv", type=float, default=20.0, help="Scoring weight: implied volatility.")
-@click.option("--w-delta", type=float, default=10.0, help="Scoring weight: delta (probability).")
-@click.option("--w-unusual", type=float, default=10.0, help="Scoring weight: unusual volume.")
 @click.option("--limit", type=int, default=_DEFAULT_LIMIT, help="Max candidates to display.")
 @click.option("--all", "show_all", is_flag=True, default=False, help="Show all candidates.")
 def penny(
@@ -324,15 +292,13 @@ def penny(
     w_volume: float,
     w_proximity: float,
     w_iv: float,
-    w_delta: float,
-    w_unusual: float,
     limit: int,
     show_all: bool,
 ) -> None:
     """Find SPY 0DTE penny call options."""
     from optionctl.spy import find_penny_0dte
 
-    weights = _make_weights(w_vol_oi, w_volume, w_proximity, w_iv, w_delta, w_unusual)
+    weights = _make_weights(w_vol_oi, w_volume, w_proximity, w_iv, w_earnings=0)
     console.print("Scanning SPY 0DTE for penny calls...")
     candidates = find_penny_0dte(max_price, min_volume, weights)
     console.print(f"Found {len(candidates)} candidates")
@@ -355,10 +321,8 @@ def favorites(top: int, output_fmt: str) -> None:
     from optionctl.scanner import scan_universe
     from optionctl.universe import get_sp500_tickers, get_top_volume_tickers
 
-    # S&P 500 scan with balanced weights including enhanced signals
-    sp500_weights = _make_weights(
-        w_vol_oi=25, w_volume=10, w_proximity=25, w_iv=20, w_delta=10, w_unusual=10, w_earnings=0
-    )
+    # S&P 500 scan with balanced weights including earnings
+    sp500_weights = _make_weights(w_vol_oi=25, w_volume=15, w_proximity=25, w_iv=20, w_earnings=15)
     sp500_tickers = get_sp500_tickers()
     console.print(f"Scanning {len(sp500_tickers)} S&P 500 tickers...")
 
@@ -383,14 +347,12 @@ def favorites(top: int, output_fmt: str) -> None:
         f"{sp500_result.tickers_with_options} had options, "
         f"found {len(sp500_result.candidates)} candidates",
     )
-    _render(sp500_result.candidates, output_fmt, "S&P 500 (balanced scoring, max 5 DTE)", limit=top)
+    _render(sp500_result.candidates, output_fmt, "S&P 500 (balanced, max 5 DTE)", limit=top)
 
     console.print()
 
     # High-volume stocks scan with volume-focused weights
-    volume_weights = _make_weights(
-        w_vol_oi=0, w_volume=60, w_proximity=0, w_iv=0, w_delta=0, w_unusual=40, w_earnings=0
-    )
+    volume_weights = _make_weights(w_vol_oi=0, w_volume=100, w_proximity=0, w_iv=0, w_earnings=0)
     volume_tickers = get_top_volume_tickers(50)
     console.print(f"Scanning {len(volume_tickers)} high-volume tickers...")
 
@@ -415,4 +377,4 @@ def favorites(top: int, output_fmt: str) -> None:
         f"{volume_result.tickers_with_options} had options, "
         f"found {len(volume_result.candidates)} candidates",
     )
-    _render(volume_result.candidates, output_fmt, "High-Volume (volume + unusual)", limit=top)
+    _render(volume_result.candidates, output_fmt, "High-Volume (by volume)", limit=top)

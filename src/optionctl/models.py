@@ -30,8 +30,6 @@ class OptionCandidate:
     score: float = 0.0
     contract_symbol: str = ""
     # Enhanced signals
-    delta: float = 0.0
-    volume_vs_avg: float = 0.0  # today's volume as multiple of average
     days_to_earnings: int | None = None  # days until next earnings, None if unknown
 
 
@@ -40,13 +38,11 @@ class ScoringWeights:
     """Configurable weights for composite scoring."""
 
     vol_oi: float = 25.0
-    volume: float = 10.0
+    volume: float = 15.0
     proximity: float = 25.0
     iv: float = 20.0
     # Enhanced signal weights
-    delta: float = 10.0
-    unusual_volume: float = 10.0
-    earnings: float = 0.0  # disabled by default, enable with --w-earnings
+    earnings: float = 15.0  # catalyst detection
 
 
 @dataclass
