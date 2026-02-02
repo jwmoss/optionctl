@@ -320,6 +320,7 @@ def penny(
 
 @main.command()
 @click.option("--top", type=int, default=10, help="Number of candidates to show from each scan.")
+@click.option("--days", type=int, default=7, help="Maximum days to expiration.")
 @click.option(
     "--output",
     "output_fmt",
@@ -327,7 +328,7 @@ def penny(
     default="table",
     help="Output format.",
 )
-def favorites(top: int, output_fmt: str) -> None:
+def favorites(top: int, days: int, output_fmt: str) -> None:
     """Run favorite scans: S&P 500 (balanced) + high-volume stocks (by volume)."""
     from rich.progress import Progress
 
@@ -347,8 +348,8 @@ def favorites(top: int, output_fmt: str) -> None:
 
         sp500_result = scan_universe(
             sp500_tickers,
-            min_dte=0,
-            max_dte=5,
+            min_dte=1,
+            max_dte=days,
             max_price=0.01,
             min_volume=100,
             progress_callback=on_sp500_progress,
@@ -360,7 +361,7 @@ def favorites(top: int, output_fmt: str) -> None:
         f"{sp500_result.tickers_with_options} had options, "
         f"found {len(sp500_result.candidates)} candidates",
     )
-    _render(sp500_result.candidates, output_fmt, "S&P 500 (balanced, max 5 DTE)", limit=top)
+    _render(sp500_result.candidates, output_fmt, f"S&P 500 (balanced, max {days} DTE)", limit=top)
 
     console.print()
 
@@ -377,8 +378,8 @@ def favorites(top: int, output_fmt: str) -> None:
 
         volume_result = scan_universe(
             volume_tickers,
-            min_dte=0,
-            max_dte=14,
+            min_dte=1,
+            max_dte=days,
             max_price=0.01,
             min_volume=50,
             progress_callback=on_volume_progress,
@@ -390,7 +391,7 @@ def favorites(top: int, output_fmt: str) -> None:
         f"{volume_result.tickers_with_options} had options, "
         f"found {len(volume_result.candidates)} candidates",
     )
-    _render(volume_result.candidates, output_fmt, "High-Volume (by volume)", limit=top)
+    _render(volume_result.candidates, output_fmt, f"High-Volume (max {days} DTE)", limit=top)
 
 
 # ---------------------------------------------------------------------------
