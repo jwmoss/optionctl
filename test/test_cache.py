@@ -143,8 +143,8 @@ def test_is_cache_valid(current_time, cached_time, expected):
         # Determine if market would be open at current_time
         is_market = current_time.weekday() < 5 and current_time.hour >= 9 and current_time.hour < 16
         mock_market.return_value = is_market
-        mock_dt.now.side_effect = (
-            lambda tz=None: current_time if tz == _ET else current_time.astimezone(UTC)
+        mock_dt.now.side_effect = lambda tz=None: (
+            current_time if tz == _ET else current_time.astimezone(UTC)
         )
 
         assert _is_cache_valid(cached_time) is expected
