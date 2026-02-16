@@ -110,9 +110,6 @@ max-positional-args = 5
     "BLE001",  # yfinance raises unpredictable exceptions
     "PLR0913",  # scan functions need many filter params
 ]
-"src/optionctl/spy.py" = [
-    "BLE001",  # yfinance raises unpredictable exceptions
-]
 "src/optionctl/polygon.py" = [
     "BLE001",  # httpx raises unpredictable exceptions
     "PLC0415",  # deferred imports for conditional logic

@@ -73,21 +73,6 @@ uv run optionctl scan --universe volume --top-n 10 --output csv
 uv run optionctl scan --universe volume --top-n 10 --output csv > results.csv
 ```
 
-## SPY 0DTE
-
-SPY has options expiring Monday, Wednesday, and Friday. These commands only
-return results on those days.
-
-### Penny Hunting
-
-Find SPY 0DTE calls priced at $0.01:
-
-```bash
-uv run optionctl spy penny
-uv run optionctl spy penny --min-volume 500
-uv run optionctl spy penny --output json
-```
-
 ## Custom Scoring Weights
 
 The score is a composite of four signals. Default weights sum to 100:
