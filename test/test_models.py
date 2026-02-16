@@ -24,6 +24,10 @@ def test_option_candidate_defaults() -> None:
     assert c.underlying_price == 0.0
     assert c.contract_symbol == ""
     assert c.vol_vs_avg is None
+    assert c.delta is None
+    assert c.gamma is None
+    assert c.theta is None
+    assert c.vega is None
 
 
 def test_scan_result_defaults() -> None:

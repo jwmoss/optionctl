@@ -59,6 +59,8 @@ def test_map_contract_basic(mock_polygon_response):
     assert result["bid"] == 0.0
     assert result["volume"] == 500
     assert result["openInterest"] == 100
+    assert result["impliedVolatility"] == 0.5
+    assert result["delta"] == 0.05
     assert "contractSymbol" in result
 
 

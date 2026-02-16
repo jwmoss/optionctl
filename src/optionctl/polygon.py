@@ -61,9 +61,11 @@ def _map_contract(raw: dict) -> dict:
         "lastPrice": day.get("close", 0.0),
         "volume": day.get("volume", 0),
         "openInterest": raw.get("open_interest", 0),
-        "impliedVolatility": greeks.get("delta", 0.0)
-        if not raw.get("implied_volatility")
-        else raw.get("implied_volatility", 0.0),
+        "impliedVolatility": raw.get("implied_volatility", 0.0),
+        "delta": greeks.get("delta"),
+        "gamma": greeks.get("gamma"),
+        "theta": greeks.get("theta"),
+        "vega": greeks.get("vega"),
         "inTheMoney": raw.get("details", {}).get("strike_price", 0.0) != 0.0
         and _is_itm(contract_type, strike, raw.get("underlying_asset", {}).get("price", 0.0)),
         "contractType": contract_type,

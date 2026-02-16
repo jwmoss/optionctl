@@ -16,6 +16,7 @@ from optionctl.models import ScoringWeights, Side
 
 if TYPE_CHECKING:
     from optionctl.models import OptionCandidate, ScanResult
+    from optionctl.zero_dte import PositionPlan
 
 console = Console(stderr=True)
 
@@ -206,6 +207,77 @@ def _run_with_progress(
         return runner(_on_progress)
 
 
+def _render_zero_dte_table(candidates: list[OptionCandidate], title: str) -> None:
+    """Render 0DTE contract candidates with Greeks."""
+    table = Table(title=title, show_lines=False)
+    table.add_column("Ticker", style="cyan")
+    table.add_column("C/P", justify="center")
+    table.add_column("Strike", justify="right")
+    table.add_column("Ask", justify="right", style="yellow")
+    table.add_column("Delta", justify="right")
+    table.add_column("Gamma", justify="right")
+    table.add_column("Theta", justify="right")
+    table.add_column("Vega", justify="right")
+    table.add_column("Vol", justify="right")
+    table.add_column("OI", justify="right")
+    table.add_column("Dist%", justify="right")
+
+    for c in candidates:
+        cp_str = "[green]C[/green]" if c.contract_type == "call" else "[red]P[/red]"
+        table.add_row(
+            c.ticker,
+            cp_str,
+            f"{c.strike:.2f}",
+            f"{c.ask:.2f}",
+            f"{c.delta:.2f}" if c.delta is not None else "-",
+            f"{c.gamma:.3f}" if c.gamma is not None else "-",
+            f"{c.theta:.3f}" if c.theta is not None else "-",
+            f"{c.vega:.3f}" if c.vega is not None else "-",
+            f"{c.volume:,}",
+            f"{c.open_interest:,}",
+            f"{c.proximity_pct:.1f}%",
+        )
+
+    console.print(table)
+
+
+def _render_zero_dte_json(candidates: list[OptionCandidate]) -> None:
+    """Render 0DTE contract candidates as JSON."""
+    data = [
+        {
+            "ticker": c.ticker,
+            "contract_type": c.contract_type,
+            "strike": c.strike,
+            "expiration": c.expiration.isoformat(),
+            "ask": c.ask,
+            "volume": c.volume,
+            "open_interest": c.open_interest,
+            "delta": c.delta,
+            "gamma": c.gamma,
+            "theta": c.theta,
+            "vega": c.vega,
+            "proximity_pct": round(c.proximity_pct, 2),
+            "contract_symbol": c.contract_symbol,
+        }
+        for c in candidates
+    ]
+    print(json.dumps(data, indent=2))
+
+
+def _print_position_plan(plan: PositionPlan) -> None:
+    """Print a compact 0DTE position-sizing plan."""
+    console.print(f"Account size: ${plan.account_size:,.2f}")
+    console.print(f"Risk per trade: {plan.risk_pct:.2f}% (${plan.max_risk_dollars:,.2f})")
+    console.print(f"Entry: ${plan.entry_price:.2f}")
+    console.print(f"Stop: ${plan.stop_price:.2f}")
+    console.print(f"Target: ${plan.target_price:.2f}")
+    console.print(f"Risk/contract: ${plan.risk_per_contract:,.2f}")
+    console.print(f"Contracts: {plan.contracts}")
+    console.print(f"Notional: ${plan.notional_dollars:,.2f}")
+    console.print(f"Time stop (ET): {plan.time_stop}")
+    console.print(f"Max trades/day: {plan.max_trades}")
+
+
 @click.group()
 @click.version_option(package_name="optionctl")
 def main() -> None:
@@ -328,6 +400,209 @@ def scan(
         "Unusual Options Flow (S&P 500)",
         limit=0 if show_all else limit,
     )
+
+
+@main.group("zero-dte")
+def zero_dte() -> None:
+    """ORB-based 0DTE day-trading utilities for index tickers."""
+
+
+@zero_dte.command("signal")
+@click.option("--ticker", type=str, default="SPY", show_default=True, help="Underlying ticker.")
+@click.option(
+    "--source",
+    type=click.Choice(["yfinance", "polygon"]),
+    default="polygon",
+    show_default=True,
+    help="Data source for option chains (Polygon includes Greeks).",
+)
+@click.option(
+    "--max-price",
+    type=float,
+    default=5.0,
+    show_default=True,
+    help="Maximum contract ask/last price.",
+)
+@click.option(
+    "--min-volume",
+    type=int,
+    default=100,
+    show_default=True,
+    help="Minimum contract volume.",
+)
+@click.option(
+    "--delta-min",
+    type=float,
+    default=0.50,
+    show_default=True,
+    help="Minimum absolute delta for directional selection.",
+)
+@click.option(
+    "--delta-max",
+    type=float,
+    default=0.60,
+    show_default=True,
+    help="Maximum absolute delta for directional selection.",
+)
+@click.option(
+    "--no-rsi-confirmation",
+    is_flag=True,
+    default=False,
+    help="Allow ORB breakouts without RSI(14) cross confirmation.",
+)
+@click.option(
+    "--limit",
+    type=int,
+    default=5,
+    show_default=True,
+    help="Maximum contract ideas to display.",
+)
+@click.option(
+    "--output",
+    "output_fmt",
+    type=click.Choice(["table", "json"]),
+    default="table",
+    show_default=True,
+    help="Output format for selected 0DTE contracts.",
+)
+def zero_dte_signal(
+    ticker: str,
+    source: str,
+    max_price: float,
+    min_volume: int,
+    delta_min: float,
+    delta_max: float,
+    no_rsi_confirmation: bool,
+    limit: int,
+    output_fmt: str,
+) -> None:
+    """Generate ORB + RSI signal and shortlist directional 0DTE contracts."""
+    from optionctl.intraday import fetch_intraday_bars
+    from optionctl.zero_dte import (
+        OrbDirection,
+        evaluate_orb_signal,
+        fetch_zero_dte_candidates,
+        select_directional_zero_dte,
+    )
+
+    symbol = ticker.upper()
+    bars_1m = fetch_intraday_bars(symbol)
+    signal = evaluate_orb_signal(
+        symbol,
+        bars_1m,
+        require_rsi_confirmation=not no_rsi_confirmation,
+    )
+
+    console.print(f"{symbol} ORB signal: [bold]{signal.signal.value}[/bold]")
+    console.print(f"Session date (ET): {signal.session_date.isoformat()}")
+    console.print(
+        f"Opening range: {signal.opening_low:.2f} - {signal.opening_high:.2f} | "
+        f"Last: {signal.last_price:.2f}"
+    )
+    if signal.breakout_time is not None:
+        console.print(f"Breakout: {signal.breakout_time.isoformat()} @ {signal.breakout_price:.2f}")
+    console.print(f"Reason: {signal.reason}")
+
+    if signal.signal not in (OrbDirection.BULLISH, OrbDirection.BEARISH):
+        return
+
+    candidates = fetch_zero_dte_candidates(
+        symbol,
+        source_name=source,
+        max_price=max_price,
+        min_volume=min_volume,
+    )
+    selected = select_directional_zero_dte(
+        candidates,
+        signal.signal,
+        delta_min=delta_min,
+        delta_max=delta_max,
+        limit=limit,
+    )
+
+    if not selected:
+        console.print("[yellow]No matching 0DTE contracts for the signal filters.[/yellow]")
+        return
+
+    if output_fmt == "json":
+        _render_zero_dte_json(selected)
+    else:
+        _render_zero_dte_table(
+            selected,
+            f"0DTE {signal.signal.value.title()} Contracts ({symbol})",
+        )
+
+
+@zero_dte.command("plan")
+@click.option(
+    "--account-size",
+    type=float,
+    required=True,
+    help="Account size in dollars.",
+)
+@click.option(
+    "--entry-price",
+    type=float,
+    required=True,
+    help="Planned option entry price.",
+)
+@click.option(
+    "--risk-pct",
+    type=float,
+    default=1.0,
+    show_default=True,
+    help="Percent of account risked per trade.",
+)
+@click.option(
+    "--stop-loss-pct",
+    type=float,
+    default=40.0,
+    show_default=True,
+    help="Stop-loss percent from entry.",
+)
+@click.option(
+    "--target-pct",
+    type=float,
+    default=100.0,
+    show_default=True,
+    help="Profit target percent from entry.",
+)
+@click.option(
+    "--time-stop",
+    type=str,
+    default="11:30",
+    show_default=True,
+    help="Time stop in ET (HH:MM).",
+)
+@click.option(
+    "--max-trades",
+    type=int,
+    default=3,
+    show_default=True,
+    help="Max number of 0DTE trades for the day.",
+)
+def zero_dte_plan(
+    account_size: float,
+    entry_price: float,
+    risk_pct: float,
+    stop_loss_pct: float,
+    target_pct: float,
+    time_stop: str,
+    max_trades: int,
+) -> None:
+    """Build a risk-managed 0DTE position-sizing plan."""
+    from optionctl.zero_dte import build_position_plan
+
+    plan = build_position_plan(
+        account_size=account_size,
+        entry_price=entry_price,
+        risk_pct=risk_pct,
+        stop_loss_pct=stop_loss_pct,
+        target_pct=target_pct,
+        time_stop=time_stop,
+        max_trades=max_trades,
+    )
+    _print_position_plan(plan)
 
 
 @main.group()
