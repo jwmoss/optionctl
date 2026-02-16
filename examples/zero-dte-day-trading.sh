@@ -18,6 +18,7 @@ MAX_TRADES="${MAX_TRADES:-3}"
 usage() {
   cat <<'EOF'
 Usage:
+  ./examples/zero-dte-day-trading.sh bootstrap
   ./examples/zero-dte-day-trading.sh night-before
   ./examples/zero-dte-day-trading.sh opening-check
   ./examples/zero-dte-day-trading.sh signal
@@ -25,6 +26,7 @@ Usage:
   ./examples/zero-dte-day-trading.sh plan <entry_price>
 
 Schedule (ET):
+  - First run only: `bootstrap`
   - Night before: run `night-before`
   - 09:30-09:44: run `opening-check` only (no trades)
   - 09:45-10:30: run `signal` every 2 minutes
@@ -50,8 +52,12 @@ signal_cmd() {
 
 phase="${1:-}"
 case "$phase" in
-  night-before)
+  bootstrap)
     uv sync
+    ;;
+  night-before)
+    echo "Night-before system check (connectivity + API only)."
+    echo "Expected outside the live window: waiting/no_trade."
     uv run optionctl zero-dte signal --ticker "$TICKER" --source "$SOURCE"
     ;;
   opening-check)

@@ -18,6 +18,12 @@ uv sync
 export POLYGON_API_KEY="your-key"
 ```
 
+Or with the helper script:
+
+```bash
+./examples/zero-dte-day-trading.sh bootstrap
+```
+
 ## Command Templates (Use These Every Day)
 
 Signal command:
@@ -58,6 +64,7 @@ uv run optionctl zero-dte signal --ticker SPY --source polygon
 ```
 
 Expected output: `waiting` or `no_trade` is fine here. This is a system check.
+If market is closed, the signal can reference the prior trading session date.
 
 ### Premarket (08:45-09:20 ET)
 
@@ -83,6 +90,7 @@ Expected output: `SPY ORB signal: waiting`.
 
 | Output | What it means | What to do |
 |------|---------|---------|
+| `Session date (ET): YYYY-MM-DD` | Bars used for the signal | Confirm you are looking at today's session during market hours |
 | `SPY ORB signal: waiting` | Opening range not complete | No trade, wait 2 min |
 | `SPY ORB signal: no_trade` + `No ORB breakout beyond opening range.` | Price inside range | No trade, wait 2 min |
 | `SPY ORB signal: no_trade` + `RSI(14) did not confirm.` | Breakout without confirmation | Skip setup, wait next signal |

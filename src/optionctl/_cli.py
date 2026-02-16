@@ -501,6 +501,7 @@ def zero_dte_signal(
     )
 
     console.print(f"{symbol} ORB signal: [bold]{signal.signal.value}[/bold]")
+    console.print(f"Session date (ET): {signal.session_date.isoformat()}")
     console.print(
         f"Opening range: {signal.opening_low:.2f} - {signal.opening_high:.2f} | "
         f"Last: {signal.last_price:.2f}"
