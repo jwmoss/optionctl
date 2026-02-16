@@ -54,7 +54,6 @@ def _render_table(candidates: list[OptionCandidate], title: str) -> None:
     """Render candidates as a rich table."""
     table = Table(title=title, show_lines=False)
     table.add_column("Ticker", style="cyan")
-    table.add_column("C/P", justify="center")
     table.add_column("Strike", justify="right")
     table.add_column("Exp", style="green")
     table.add_column("Ask", justify="right", style="yellow")
@@ -66,8 +65,6 @@ def _render_table(candidates: list[OptionCandidate], title: str) -> None:
     table.add_column("Score", justify="right", style="bold green")
 
     for c in candidates:
-        cp_str = "[green]C[/green]" if c.contract_type == "call" else "[red]P[/red]"
-
         if c.proximity_pct < _PROXIMITY_GOOD:
             dist_str = f"[bold green]{c.proximity_pct:.1f}%[/bold green]"
         elif c.proximity_pct < _PROXIMITY_MODERATE:
@@ -77,7 +74,6 @@ def _render_table(candidates: list[OptionCandidate], title: str) -> None:
 
         table.add_row(
             c.ticker,
-            cp_str,
             f"{c.strike:.2f}",
             c.expiration.isoformat(),
             f"{c.ask:.2f}",
@@ -106,7 +102,6 @@ def _render_json(candidates: list[OptionCandidate]) -> None:
     data = [
         {
             "ticker": c.ticker,
-            "contract_type": c.contract_type,
             "strike": c.strike,
             "expiration": c.expiration.isoformat(),
             "ask": c.ask,
@@ -131,7 +126,6 @@ def _render_csv(candidates: list[OptionCandidate]) -> None:
     writer.writerow(
         [
             "ticker",
-            "contract_type",
             "strike",
             "expiration",
             "ask",
@@ -150,7 +144,6 @@ def _render_csv(candidates: list[OptionCandidate]) -> None:
         writer.writerow(
             [
                 c.ticker,
-                c.contract_type,
                 c.strike,
                 c.expiration.isoformat(),
                 c.ask,
