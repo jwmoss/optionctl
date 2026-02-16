@@ -1,38 +1,26 @@
-# 0DTE ORB Workflow
+# 0DTE Daily Playbook (SPY, ET)
 
-This example follows the research playbook:
+Goal: run the same process every day, with fixed timing and fixed rules.
 
-1. Wait for the 9:30-9:45 ET opening range.
-2. Trade only a breakout with RSI confirmation.
-3. Choose slightly ITM contracts around 0.50-0.60 delta.
-4. Size risk at 1-2% of account, with fixed stop/target and time stop.
+## Fixed Daily Settings
 
-## Prerequisites
+- Underlying: `SPY`
+- Strategy window: `09:45-11:30 ET`
+- Delta band: `0.50-0.60`
+- Risk per trade: `1-2%` of account
+- Max trades/day: `2-3`
+- No averaging down
+
+## One-Time Setup
 
 ```bash
 uv sync
 export POLYGON_API_KEY="your-key"
 ```
 
-## Real-Time Runbook (ET)
+## Command Templates (Use These Every Day)
 
-### 9:20-9:29 (Prep)
-
-1. Mark prior day high/low/close and key support/resistance.
-2. Check pre-market SPY direction and VIX regime.
-3. Decide account risk and max trades for the day (usually 1-2% risk, 2-3 trades max).
-
-### 9:30-9:44 (No trade window)
-
-Run signal only for awareness. You should see `waiting` and do nothing.
-
-```bash
-uv run optionctl zero-dte signal --ticker SPY --source polygon
-```
-
-### 9:45-11:30 (Execution window)
-
-Run the signal command every 1-2 minutes until you get a valid setup:
+Signal command:
 
 ```bash
 uv run optionctl zero-dte signal \
@@ -44,39 +32,7 @@ uv run optionctl zero-dte signal \
   --delta-max 0.60
 ```
 
-Use the command output to decide:
-
-| Output | Meaning | Action |
-|------|---------|---------|
-| `SPY ORB signal: waiting` | 9:30-9:44 range still forming | No trade |
-| `SPY ORB signal: no_trade` + `No ORB breakout beyond opening range.` | Price is chopping inside range | No trade, keep waiting |
-| `SPY ORB signal: no_trade` + `RSI(14) did not confirm.` | Breakout happened without RSI cross | Skip trade |
-| `SPY ORB signal: bullish` + contract table | Break above 15-min high with confirmation | Consider top 0DTE call idea |
-| `SPY ORB signal: bearish` + contract table | Break below 15-min low with confirmation | Consider top 0DTE put idea |
-
-If `bullish`/`bearish` prints but no contracts are returned, relax filters (for example increase `--max-price` or lower `--min-volume`) and rerun.
-
-## 1. Generate Signal + Contract Ideas
-
-```bash
-uv run optionctl zero-dte signal \
-  --ticker SPY \
-  --source polygon \
-  --max-price 3.00 \
-  --min-volume 200 \
-  --delta-min 0.50 \
-  --delta-max 0.60
-```
-
-Notes:
-
-- `polygon` is recommended for Greeks (`delta`, `gamma`, `theta`, `vega`).
-- The command prints ORB direction (`bullish`, `bearish`, `no_trade`, `waiting`)
-  and then returns matching same-day contracts.
-
-## 2. Build Position Plan
-
-After you choose a contract and know your expected fill price, generate a plan:
+Plan command (run only after choosing a contract and entry price):
 
 ```bash
 uv run optionctl zero-dte plan \
@@ -89,35 +45,78 @@ uv run optionctl zero-dte plan \
   --max-trades 3
 ```
 
-Use plan output as hard exits:
+## Daily Schedule
 
-- `Stop: $X.XX` -> exit when contract trades at or below this level.
-- `Target: $X.XX` -> take profits at this level (or scale out).
-- `Time stop (ET): 11:30` -> close the trade at this time even if flat.
-- `Max trades/day: N` -> stop trading after N entries.
+### Night Before (18:00-20:00 ET)
 
-This aligns with the research guardrails:
-
-- Profit target typically 50-100% (`--target-pct 50` to `100`)
-- Stop loss typically 30-50% (`--stop-loss-pct 30` to `50`)
-- No averaging down
-
-## 3. JSON Output for Automation
+1. Mark prior day high/low/close and major support/resistance.
+2. Confirm tomorrow's account risk and max trades.
+3. Confirm environment works:
 
 ```bash
-uv run optionctl zero-dte signal \
-  --ticker SPY \
-  --source polygon \
-  --output json
+uv run optionctl zero-dte signal --ticker SPY --source polygon
 ```
 
-Tip: parse `signal`, `reason`, and returned contracts to automate "trade vs no-trade" routing.
+Expected output: `waiting` or `no_trade` is fine here. This is a system check.
 
-## 4. Allow Breakouts Without RSI Cross (Optional)
+### Premarket (08:45-09:20 ET)
+
+1. Check SPY premarket direction and overnight range.
+2. Check VIX regime (higher VIX -> reduce size).
+3. Do not enter trades yet.
+
+### Opening Range (09:30-09:44 ET)
+
+1. No trades in this window.
+2. Run signal once at ~09:35 and once at ~09:44:
 
 ```bash
-uv run optionctl zero-dte signal \
-  --ticker SPY \
-  --source polygon \
-  --no-rsi-confirmation
+uv run optionctl zero-dte signal --ticker SPY --source polygon
 ```
+
+Expected output: `SPY ORB signal: waiting`.
+
+### Entry Window (09:45-10:30 ET)
+
+1. Run the signal command every 2 minutes.
+2. Follow this rule table exactly:
+
+| Output | What it means | What to do |
+|------|---------|---------|
+| `SPY ORB signal: waiting` | Opening range not complete | No trade, wait 2 min |
+| `SPY ORB signal: no_trade` + `No ORB breakout beyond opening range.` | Price inside range | No trade, wait 2 min |
+| `SPY ORB signal: no_trade` + `RSI(14) did not confirm.` | Breakout without confirmation | Skip setup, wait next signal |
+| `SPY ORB signal: bullish` + contracts shown | Confirmed upside break | Pick top call candidate |
+| `SPY ORB signal: bearish` + contracts shown | Confirmed downside break | Pick top put candidate |
+
+3. If `bullish`/`bearish` appears and contracts are listed:
+   - choose your contract
+   - run `zero-dte plan` with your expected `--entry-price`
+   - place trade once
+
+### In-Between Management (After Entry)
+
+1. Do not search for new setups while in a live trade.
+2. Manage only the active position using plan outputs:
+   - `Stop: $X.XX` -> exit at or below stop
+   - `Target: $X.XX` -> take profit
+   - `Time stop (ET): 11:30` -> force close regardless of P/L
+3. If flat after exit and still below max trades, return to the 2-minute signal cycle.
+
+### Late Morning (10:30-11:30 ET)
+
+1. If still flat, reduce signal checks to every 5 minutes.
+2. If no confirmed breakout by 11:30, no trade for the day.
+
+### Hard Stop (11:30 ET)
+
+1. Close any open 0DTE position at `11:30 ET`.
+2. Stop taking new entries for the day.
+
+### Post-Close (16:05-16:20 ET)
+
+1. Log:
+   - number of trades taken
+   - whether rules were followed
+   - exit reason (target, stop, or time stop)
+2. Update notes for next night's prep.

@@ -1,25 +1,85 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Optional when using Polygon data source:
-# export POLYGON_API_KEY="your-key"
-#
-# Real-time usage (ET):
-# - 09:30-09:44: do not trade, opening range only.
-# - 09:45-11:30: run signal every 1-2 minutes, trade only bullish/bearish output.
-# - Exit on plan output levels: Stop, Target, and Time stop (default 11:30 ET).
+TICKER="${TICKER:-SPY}"
+SOURCE="${SOURCE:-polygon}"
+MAX_PRICE="${MAX_PRICE:-3.00}"
+MIN_VOLUME="${MIN_VOLUME:-200}"
+DELTA_MIN="${DELTA_MIN:-0.50}"
+DELTA_MAX="${DELTA_MAX:-0.60}"
 
-echo "1) ORB + RSI signal and 0DTE ideas"
-uv run optionctl zero-dte signal --ticker SPY --source polygon --max-price 3.00 --min-volume 200 --delta-min 0.50 --delta-max 0.60
+ACCOUNT_SIZE="${ACCOUNT_SIZE:-25000}"
+RISK_PCT="${RISK_PCT:-1.2}"
+STOP_LOSS_PCT="${STOP_LOSS_PCT:-40}"
+TARGET_PCT="${TARGET_PCT:-100}"
+TIME_STOP="${TIME_STOP:-11:30}"
+MAX_TRADES="${MAX_TRADES:-3}"
 
-echo
-echo "2) Position plan"
-uv run optionctl zero-dte plan --account-size 25000 --entry-price 1.50 --risk-pct 1.2 --stop-loss-pct 40 --target-pct 100 --time-stop 11:30 --max-trades 3
+usage() {
+  cat <<'EOF'
+Usage:
+  ./examples/zero-dte-day-trading.sh night-before
+  ./examples/zero-dte-day-trading.sh opening-check
+  ./examples/zero-dte-day-trading.sh signal
+  ./examples/zero-dte-day-trading.sh signal-json
+  ./examples/zero-dte-day-trading.sh plan <entry_price>
 
-echo
-echo "3) JSON output example"
-uv run optionctl zero-dte signal --ticker SPY --source polygon --output json
+Schedule (ET):
+  - Night before: run `night-before`
+  - 09:30-09:44: run `opening-check` only (no trades)
+  - 09:45-10:30: run `signal` every 2 minutes
+  - 10:30-11:30: run `signal` every 5 minutes
+  - Hard close open trade by 11:30 using plan time stop
 
-echo
-echo "4) Optional: disable RSI confirmation"
-uv run optionctl zero-dte signal --ticker SPY --source polygon --no-rsi-confirmation
+Optional env vars:
+  TICKER, SOURCE, MAX_PRICE, MIN_VOLUME, DELTA_MIN, DELTA_MAX
+  ACCOUNT_SIZE, RISK_PCT, STOP_LOSS_PCT, TARGET_PCT, TIME_STOP, MAX_TRADES
+EOF
+}
+
+signal_cmd() {
+  uv run optionctl zero-dte signal \
+    --ticker "$TICKER" \
+    --source "$SOURCE" \
+    --max-price "$MAX_PRICE" \
+    --min-volume "$MIN_VOLUME" \
+    --delta-min "$DELTA_MIN" \
+    --delta-max "$DELTA_MAX" \
+    "$@"
+}
+
+phase="${1:-}"
+case "$phase" in
+  night-before)
+    uv sync
+    uv run optionctl zero-dte signal --ticker "$TICKER" --source "$SOURCE"
+    ;;
+  opening-check)
+    uv run optionctl zero-dte signal --ticker "$TICKER" --source "$SOURCE"
+    ;;
+  signal)
+    signal_cmd
+    ;;
+  signal-json)
+    signal_cmd --output json
+    ;;
+  plan)
+    entry_price="${2:-}"
+    if [[ -z "$entry_price" ]]; then
+      echo "Missing entry price. Example: ./examples/zero-dte-day-trading.sh plan 1.50" >&2
+      exit 1
+    fi
+    uv run optionctl zero-dte plan \
+      --account-size "$ACCOUNT_SIZE" \
+      --entry-price "$entry_price" \
+      --risk-pct "$RISK_PCT" \
+      --stop-loss-pct "$STOP_LOSS_PCT" \
+      --target-pct "$TARGET_PCT" \
+      --time-stop "$TIME_STOP" \
+      --max-trades "$MAX_TRADES"
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac
