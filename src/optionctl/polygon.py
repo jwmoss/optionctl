@@ -13,7 +13,7 @@ from optionctl.cache import write_chain_cache, write_no_options_cache
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_MAX_DTE = 14
+_DEFAULT_MAX_DTE = 15
 _RATE_LIMIT_DELAY = 12.0  # seconds between requests (free tier: 5 req/min)
 
 

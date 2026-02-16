@@ -173,7 +173,7 @@ def _get_earnings_days(stock: yf.Ticker, today: date) -> int | None:
     return None
 
 
-_DEFAULT_MAX_DTE = 14
+_DEFAULT_MAX_DTE = 15
 
 
 def _fetch_chains_within_dte(
@@ -329,7 +329,7 @@ _SIDE_TO_CONTRACT_TYPE = {"calls": "call", "puts": "put"}
 def scan_ticker(
     ticker: str,
     min_dte: int = 0,
-    max_dte: int = 14,
+    max_dte: int = _DEFAULT_MAX_DTE,
     max_price: float = 0.01,
     min_volume: int = 100,
     min_vol_oi: float = 0.0,
@@ -416,7 +416,7 @@ def scan_ticker(
 def scan_universe(
     tickers: list[str],
     min_dte: int = 0,
-    max_dte: int = 14,
+    max_dte: int = _DEFAULT_MAX_DTE,
     max_price: float = 0.01,
     min_volume: int = 100,
     min_vol_oi: float = 0.0,

@@ -30,7 +30,7 @@ class OptionDataSource(Protocol):
     """Protocol for option data providers."""
 
     def fetch_ticker_data(
-        self, ticker: str, *, fetch_enhanced: bool = True, max_dte: int = 14
+        self, ticker: str, *, fetch_enhanced: bool = True, max_dte: int = 15
     ) -> dict | None:
         """Fetch option chain data for a ticker.
 

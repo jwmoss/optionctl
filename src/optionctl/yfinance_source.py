@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 _MAX_RETRIES = 3
 _RETRY_DELAY = 1.0
-_DEFAULT_MAX_DTE = 14
+_DEFAULT_MAX_DTE = 15
 
 
 def _fetch_with_retry(ticker: str) -> tuple[yf.Ticker, tuple[str, ...]] | None:
