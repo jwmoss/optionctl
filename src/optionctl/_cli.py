@@ -271,6 +271,12 @@ def main() -> None:
     default=False,
     help="Show all matching contracts.",
 )
+@click.option(
+    "--ticker",
+    "tickers_input",
+    multiple=True,
+    help="Specific ticker(s) to scan (repeatable). Defaults to S&P 500.",
+)
 def scan(
     min_dte: int,
     max_dte: int,
@@ -281,13 +287,23 @@ def scan(
     output_fmt: str,
     limit: int,
     show_all: bool,
+    tickers_input: tuple[str, ...],
 ) -> None:
-    """Scan S&P 500 names for unusual options activity."""
+    """Scan for unusual options activity."""
     from optionctl.scanner import scan_universe
-    from optionctl.universe import get_sp500_tickers
 
-    tickers = get_sp500_tickers(use_cache=not refresh)
-    console.print(f"Scanning {len(tickers)} S&P 500 tickers for unusual flow...")
+    if tickers_input:
+        tickers = [t.upper() for t in tickers_input]
+        label = ", ".join(tickers)
+        title = f"Unusual Options Flow ({label})"
+    else:
+        from optionctl.universe import get_sp500_tickers
+
+        tickers = get_sp500_tickers(use_cache=not refresh)
+        label = "S&P 500"
+        title = "Unusual Options Flow (S&P 500)"
+
+    console.print(f"Scanning {len(tickers)} {label} tickers for unusual flow...")
 
     result = _run_with_progress(
         total=len(tickers),
@@ -309,7 +325,7 @@ def scan(
     _render(
         result.candidates,
         output_fmt,
-        "Unusual Options Flow (S&P 500)",
+        title,
         limit=0 if show_all else limit,
     )
 
