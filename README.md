@@ -1,146 +1,86 @@
 # optionctl
 
-A Python CLI tool to find stock options on high-volume stocks priced at $0.01 with potential to increase to $0.02 or higher.
+Opinionated CLI for finding unusual options activity in S&P 500 tickers.
 
-## Strategy
+## What This Tool Does
 
-### Penny Options ($0.01 OTM Calls)
+`optionctl` scans all S&P 500 tickers by default.
 
-- Target deep OTM calls near expiration (0-14 DTE) on high-volume stocks
-- The edge comes from finding contracts with **unusual volume/OI ratios** (signals smart money), **proximity to strike** (closer = more likely to double), and **IV spikes** (catalyst expected)
-- A 100% return ($0.01 -> $0.02) requires a relatively small move in the underlying
-- Key risk: vast majority expire worthless -- this is a numbers game
+It ranks contracts using an unusual-flow score weighted toward:
 
-### Filtering Criteria
+- `Vol/OI` (new opening activity signal)
+- raw contract volume
+- distance to the underlying (proximity)
+- IV (small weight)
 
-| Signal | Default Weight | Description |
-|--------|---------------|-------------|
-| Volume/OI ratio | 30 | High volume relative to open interest signals unusual activity / new positions |
-| Raw volume | 15 | High absolute volume means liquidity and stronger conviction |
-| Proximity to strike | 30 | How close the underlying is to the strike -- closer = higher chance of going ITM |
-| Implied volatility | 25 | High IV suggests expected move / catalyst |
+## Defaults (Opinionated)
 
-All four signals are combined into a configurable composite score to rank candidates.
+The default scan is tuned for unusual flow, not penny-option lottery tickets:
 
-### Data Source
-
-Yahoo Finance via `yfinance` (free, sufficient for scanning). Live data managed separately.
-
-### Caching
-
-Option chain data is cached to `~/.cache/optionctl/chains/` to dramatically speed up repeated scans:
-
-- **During market hours**: 5-minute TTL (data refreshes frequently)
-- **After hours/weekends**: Valid until next market open (data doesn't change)
-- **No-options tickers**: Cached to skip silently on future runs
-
-First scan may be slow (~1-2 min for S&P 500), but subsequent runs complete in <1 second.
-
-## Architecture
-
-```
-src/optionctl/
-├── __init__.py
-├── cli.py              # CLI entry point
-├── scanner.py           # Core scanning engine
-├── filters.py           # Volume/OI, proximity, IV filters
-├── scoring.py           # Composite scoring of candidates
-├── universe.py          # Stock universe providers (S&P500, top volume, watchlist)
-└── models.py            # Data models (dataclasses)
-```
+- `max_price`: `2.00`
+- `min_volume`: `250`
+- `min_vol_oi`: `1.0`
+- `side`: `both`
+- `DTE`: `0-14`
 
 ## Quick Start
 
-Two main scanning approaches:
-
-### Broad market scan (smart money signals)
-
 ```bash
-uv run optionctl scan --universe sp500 --max-dte 5
+uv run optionctl scan
 ```
 
-Scans all ~500 S&P 500 stocks for penny options expiring this week. Uses balanced scoring that weighs volume/OI ratio, strike proximity, and IV to surface contracts with unusual activity patterns -- potential "smart money" signals across the broader market.
+This runs the default unusual-flow scan across the full S&P 500 universe.
 
-### High-volume scan (where's the action)
-
-```bash
-uv run optionctl scan --universe volume \
-  --w-vol-oi 0 --w-volume 100 --w-proximity 0 --w-iv 0 \
-  --min-volume 50
-```
-
-Scans a curated list of ~50 high-volume optionable stocks (AAPL, NVDA, TSLA, AMD, etc.) and ranks purely by raw trading volume. Ignores all other signals. Good for finding contracts with the most activity right now, regardless of whether it looks like informed trading.
-
-## CLI Usage
-
-### Scan for penny options
+## Common Commands
 
 ```bash
-uv run optionctl scan                          # Scan S&P 500 for $0.01 OTM calls
-uv run optionctl scan --universe sp500 --max-dte 5  # S&P 500, same-week only
-uv run optionctl scan --universe volume        # Scan top stocks by volume
-uv run optionctl scan --universe watchlist --watchlist-file tickers.txt
-uv run optionctl scan --min-dte 0 --max-dte 5  # Same-week expiration only
-uv run optionctl scan --output json            # Output as JSON
+# Tighten unusual threshold
+uv run optionctl scan --min-vol-oi 2.0 --min-volume 500
+
+# Calls only, next two weeks
+uv run optionctl scan --side calls --min-dte 0 --max-dte 14
+
+# JSON / CSV output
+uv run optionctl scan --output json
+uv run optionctl scan --output csv
 ```
 
-### Cache Management
+## Scan Flags
 
-```bash
-uv run optionctl cache status                  # Show cache statistics
-uv run optionctl cache warm --universe sp500   # Pre-fetch S&P 500 option chains
-uv run optionctl cache warm --all              # Fetch all expirations (not just 2 weeks)
-uv run optionctl cache clear                   # Clear all cached data
-```
-
-**Tip**: Run `uv run optionctl cache warm --universe sp500` before your first scan to pre-populate the cache. This makes subsequent scans nearly instant.
-
-### Favorites (Quick Scan)
-
-```bash
-uv run optionctl favorites                     # Run both S&P 500 and high-volume scans
-uv run optionctl favorites --top 5             # Show top 5 from each scan
-uv run optionctl favorites --output json       # Output as JSON
-```
-
-### Custom Scoring Weights
-
-All weights are tunable via CLI flags. They default to summing to 100:
-
-```bash
-uv run optionctl scan --w-vol-oi 30 --w-volume 15 --w-proximity 30 --w-iv 25  # defaults
-uv run optionctl scan --w-vol-oi 0 --w-volume 100 --w-proximity 0 --w-iv 0    # pure volume
-uv run optionctl scan --w-vol-oi 10 --w-volume 10 --w-proximity 60 --w-iv 20  # proximity-focused
-```
-
-### Common Flags
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--universe` | `sp500` | Stock universe: `sp500`, `volume`, `watchlist` |
+| Flag | Default | Purpose |
+|------|---------|---------|
 | `--min-dte` | `0` | Minimum days to expiration |
 | `--max-dte` | `14` | Maximum days to expiration |
-| `--watchlist-file` | - | Path to file with ticker symbols (one per line) |
-| `--min-volume` | `100` | Minimum contract volume |
-| `--output` | `table` | Output format: `table`, `json`, `csv` |
-| `--w-vol-oi` | `30` | Scoring weight: volume/OI ratio |
-| `--w-volume` | `15` | Scoring weight: raw volume |
-| `--w-proximity` | `30` | Scoring weight: strike proximity |
-| `--w-iv` | `25` | Scoring weight: implied volatility |
+| `--max-price` | `2.00` | Max contract ask/last |
+| `--min-volume` | `250` | Minimum contract volume |
+| `--min-vol-oi` | `1.0` | Minimum volume/open-interest ratio |
+| `--side` | `both` | `calls`, `puts`, or `both` |
+| `--output` | `table` | `table`, `json`, `csv` |
+| `--limit` | `20` | Max rows to display |
+| `--all` | `false` | Show all rows |
+| `--refresh` | `false` | Bypass chain cache |
 
-## Examples
+## Cache Commands
 
-See the [examples/](examples/) directory for detailed walkthroughs:
+```bash
+# Warm S&P 500 universe
+uv run optionctl cache warm
 
-- **[High-Conviction Volume Scan](examples/high-conviction-volume.md)** -- Find penny options with the most raw trading activity using pure volume scoring
-- **[Custom Watchlist](examples/custom-watchlist.md)** -- Scan a specific set of tickers, including pre-earnings plays
-- **[General Usage](examples/usage.md)** -- Full reference for all commands, flags, output formats, and `jq` recipes
+# Warm all expirations
+uv run optionctl cache warm --all
+
+# Inspect / clear cache
+uv run optionctl cache status
+uv run optionctl cache clear
+
+# Prune volume-history files
+uv run optionctl cache prune-history --max-age 30
+```
 
 ## Development
 
 ```bash
-make dev       # Install all dependencies
-make lint      # Run ruff + ty
-make format    # Format with ruff
-make test      # Run pytest
+make format
+make lint
+make test
 ```

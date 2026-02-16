@@ -332,6 +332,7 @@ def scan_ticker(
     max_dte: int = 14,
     max_price: float = 0.01,
     min_volume: int = 100,
+    min_vol_oi: float = 0.0,
     *,
     side: Side = Side.CALLS,
     fetch_enhanced: bool = True,
@@ -346,6 +347,7 @@ def scan_ticker(
         max_dte: Maximum days to expiration.
         max_price: Maximum ask price (default $0.01).
         min_volume: Minimum contract volume.
+        min_vol_oi: Minimum volume/open-interest ratio.
         side: Which option side(s) to scan.
         fetch_enhanced: Whether to fetch enhanced signals (earnings, etc.).
         use_cache: Whether to use disk cache for results.
@@ -388,7 +390,13 @@ def scan_ticker(
             if df.empty:
                 continue
 
-            filtered = apply_filters(df, underlying_price, max_price, min_volume)
+            filtered = apply_filters(
+                df,
+                underlying_price,
+                max_price,
+                min_volume,
+                min_vol_oi,
+            )
             candidates.extend(
                 build_candidate_from_row(
                     ticker=ticker,
@@ -411,6 +419,7 @@ def scan_universe(
     max_dte: int = 14,
     max_price: float = 0.01,
     min_volume: int = 100,
+    min_vol_oi: float = 0.0,
     progress_callback: Callable[[str, int, int], None] | None = None,
     weights: ScoringWeights | None = None,
     *,
@@ -427,6 +436,7 @@ def scan_universe(
         max_dte: Maximum days to expiration.
         max_price: Maximum ask price.
         min_volume: Minimum contract volume.
+        min_vol_oi: Minimum volume/open-interest ratio.
         progress_callback: Optional callback(ticker, current, total) for progress.
         weights: Optional custom scoring weights.
         side: Which option side(s) to scan.
@@ -443,10 +453,11 @@ def scan_universe(
     def _scan_one_ticker(ticker: str) -> None:
         candidates = scan_ticker(
             ticker,
-            min_dte,
-            max_dte,
-            max_price,
-            min_volume,
+            min_dte=min_dte,
+            max_dte=max_dte,
+            max_price=max_price,
+            min_volume=min_volume,
+            min_vol_oi=min_vol_oi,
             side=side,
             fetch_enhanced=fetch_enhanced,
             use_cache=use_cache,

@@ -63,6 +63,7 @@ def apply_filters(
     underlying_price: float,
     max_price: float = 0.01,
     min_volume: int = 100,
+    min_vol_oi: float = 0.0,
 ) -> pd.DataFrame:
     """Apply penny option filters to a DataFrame of options (calls or puts).
 
@@ -71,6 +72,7 @@ def apply_filters(
         underlying_price: Current price of the underlying.
         max_price: Maximum ask price for penny options.
         min_volume: Minimum contract volume.
+        min_vol_oi: Minimum volume/open-interest ratio.
 
     Returns:
         Filtered DataFrame with only qualifying contracts.
@@ -106,6 +108,11 @@ def apply_filters(
         volume_oi_ratio(int(v), int(oi))
         for v, oi in zip(df["volume"], df["openInterest"], strict=True)
     ]
+    if min_vol_oi > 0:
+        df = df[df["volumeOiRatio"] >= min_vol_oi]
+        if df.empty:
+            return df
+
     df["proximityPct"] = [proximity_pct(underlying_price, s) for s in df["strike"]]
 
     return df

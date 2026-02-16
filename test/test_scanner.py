@@ -120,6 +120,26 @@ def test_scan_ticker_filters_by_dte(
     assert len(result) == 0
 
 
+@patch("optionctl.scanner.compute_vol_vs_avg", return_value=None)
+@patch("optionctl.scanner.record_volume_snapshot")
+@patch("optionctl.scanner.datetime")
+@patch("optionctl.scanner.yf")
+def test_scan_ticker_filters_by_min_vol_oi(
+    mock_yf, mock_dt, _mock_record, _mock_vol, make_calls_df, make_mock_ticker
+):
+    mock_dt.now.return_value.date.return_value = date(2026, 1, 27)
+    exp = "2026-01-30"
+    calls = make_calls_df(
+        strikes=[200.0, 210.0], asks=[0.01, 0.01], volumes=[100, 200], open_interests=[200, 100]
+    )
+    mock_yf.Ticker.return_value = make_mock_ticker(150.0, (exp,), {exp: calls})
+
+    result = scan_ticker("TEST", min_vol_oi=1.0, use_cache=False)
+    assert len(result) == 1
+    assert result[0].strike == 210.0
+    assert result[0].volume_oi_ratio == 2.0
+
+
 @pytest.mark.parametrize(
     ("setup", "ticker"),
     [
@@ -236,3 +256,12 @@ def test_scan_universe_threads_source(mock_scan, _mock_record):
     scan_universe(["X"], source=source)
     _, kwargs = mock_scan.call_args
     assert kwargs["source"] is source
+
+
+@patch("optionctl.scanner.record_volume_snapshot")
+@patch("optionctl.scanner.scan_ticker")
+def test_scan_universe_threads_min_vol_oi(mock_scan, _mock_record):
+    mock_scan.return_value = []
+    scan_universe(["X"], min_vol_oi=2.5)
+    _, kwargs = mock_scan.call_args
+    assert kwargs["min_vol_oi"] == 2.5
