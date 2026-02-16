@@ -18,27 +18,6 @@ _CACHE_DIR = Path.home() / ".cache" / "optionctl" / "chains"
 _ET = ZoneInfo("America/New_York")
 
 
-def _get_next_market_open() -> datetime:
-    """Get the next market open time (9:30 AM ET on a weekday).
-
-    Returns:
-        Next market open as a UTC datetime.
-    """
-    now_et = datetime.now(_ET)
-    market_open_today = now_et.replace(hour=9, minute=30, second=0, microsecond=0)
-
-    # If before market open today and it's a weekday, use today
-    if now_et < market_open_today and now_et.weekday() < 5:  # noqa: PLR2004
-        return market_open_today.astimezone(UTC)
-
-    # Otherwise, find next weekday
-    next_day = now_et + timedelta(days=1)
-    while next_day.weekday() >= 5:  # noqa: PLR2004
-        next_day += timedelta(days=1)
-
-    return next_day.replace(hour=9, minute=30, second=0, microsecond=0).astimezone(UTC)
-
-
 def _is_market_open() -> bool:
     """Check if the US stock market is currently open.
 
