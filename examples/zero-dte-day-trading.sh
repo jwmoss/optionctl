@@ -22,6 +22,7 @@ Usage:
   ./examples/zero-dte-day-trading.sh night-before
   ./examples/zero-dte-day-trading.sh opening-check
   ./examples/zero-dte-day-trading.sh signal
+  ./examples/zero-dte-day-trading.sh signal-penny
   ./examples/zero-dte-day-trading.sh signal-json
   ./examples/zero-dte-day-trading.sh plan <entry_price>
 
@@ -84,6 +85,9 @@ case "$phase" in
     ;;
   signal)
     signal_cmd
+    ;;
+  signal-penny)
+    MAX_PRICE=0.01 DELTA_MIN=0.01 DELTA_MAX=0.20 signal_cmd
     ;;
   signal-json)
     signal_cmd --output json

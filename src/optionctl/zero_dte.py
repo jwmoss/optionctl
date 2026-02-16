@@ -431,7 +431,8 @@ def select_directional_zero_dte(
         return []
 
     target_type = "call" if direction == OrbDirection.BULLISH else "put"
-    target_delta = 0.55 if direction == OrbDirection.BULLISH else -0.55
+    mid_delta = (delta_min + delta_max) / 2
+    target_delta = mid_delta if direction == OrbDirection.BULLISH else -mid_delta
 
     directional = [c for c in candidates if c.contract_type == target_type and c.dte == 0]
     if not directional:

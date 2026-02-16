@@ -58,6 +58,17 @@ uv run optionctl zero-dte plan \
   --risk-pct 1.2
 ```
 
+Optional penny-contract override:
+
+```bash
+uv run optionctl zero-dte signal \
+  --ticker SPY \
+  --source polygon \
+  --max-price 0.01 \
+  --delta-min 0.01 \
+  --delta-max 0.20
+```
+
 ## Scan Flags
 
 | Flag | Default | Purpose |

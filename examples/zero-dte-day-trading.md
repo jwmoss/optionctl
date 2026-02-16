@@ -6,7 +6,8 @@ Goal: run the same process every day, with fixed timing and fixed rules.
 
 - Underlying: `SPY`
 - Strategy window: `09:45-11:30 ET`
-- Delta band: `0.50-0.60`
+- Price cap: `3.00-5.00`
+- Delta band: `0.50-0.60` (slightly ITM)
 - Risk per trade: `1-2%` of account
 - Max trades/day: `2-3`
 - No averaging down
@@ -128,3 +129,11 @@ Expected output: `SPY ORB signal: waiting`.
    - whether rules were followed
    - exit reason (target, stop, or time stop)
 2. Update notes for next night's prep.
+
+## Optional Penny Mode (Aggressive)
+
+This is outside the original ORB delta profile and will usually select farther OTM contracts.
+
+```bash
+./examples/zero-dte-day-trading.sh signal-penny
+```
