@@ -11,6 +11,7 @@ import pandas as pd
 import pytest
 
 from optionctl.cache import (
+    _CACHE_VERSION,
     _is_cache_valid,
     _is_market_open,
     clear_cache,
@@ -47,6 +48,11 @@ def sample_chain_df():
             "openInterest": [100, 200],
         }
     )
+
+
+def _make_chains(df):
+    """Wrap a DataFrame in the v2 chain format."""
+    return {"2026-01-30": {"calls": df, "puts": pd.DataFrame()}}
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +163,7 @@ def test_is_cache_valid(current_time, cached_time, expected):
 
 def test_write_and_read_chain_cache(cache_dir, sample_chain_df):
     """Write cache and read it back."""
-    chains = {"2026-01-30": sample_chain_df}
+    chains = _make_chains(sample_chain_df)
 
     write_chain_cache(
         ticker="AAPL",
@@ -177,14 +183,17 @@ def test_write_and_read_chain_cache(cache_dir, sample_chain_df):
     assert data["underlying_price"] == 150.0
     assert data["expirations"] == ["2026-01-30"]
     assert data["days_to_earnings"] == 5
+    assert data["cache_version"] == _CACHE_VERSION
     assert "2026-01-30" in data["chains"]
-    assert len(data["chains"]["2026-01-30"]) == 2
+    assert "calls" in data["chains"]["2026-01-30"]
+    assert "puts" in data["chains"]["2026-01-30"]
+    assert len(data["chains"]["2026-01-30"]["calls"]) == 2
 
 
 @pytest.mark.usefixtures("cache_dir")
 def test_read_chain_cache_valid(sample_chain_df):
     """Read valid (fresh) cache."""
-    chains = {"2026-01-30": sample_chain_df}
+    chains = _make_chains(sample_chain_df)
     write_chain_cache("TEST", 100.0, ["2026-01-30"], chains)
 
     with patch("optionctl.cache._is_cache_valid", return_value=True):
@@ -198,7 +207,7 @@ def test_read_chain_cache_valid(sample_chain_df):
 @pytest.mark.usefixtures("cache_dir")
 def test_read_chain_cache_expired(sample_chain_df):
     """Expired cache returns None."""
-    chains = {"2026-01-30": sample_chain_df}
+    chains = _make_chains(sample_chain_df)
     write_chain_cache("TEST", 100.0, ["2026-01-30"], chains)
 
     with patch("optionctl.cache._is_cache_valid", return_value=False):
@@ -232,9 +241,27 @@ def test_read_chain_cache_missing_timestamp(cache_dir):
     assert result is None
 
 
+def test_read_chain_cache_old_version(cache_dir):
+    """Old cache version (v1) returns None, forcing re-fetch."""
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "timestamp": datetime.now(UTC).isoformat(),
+        "ticker": "OLD",
+        "underlying_price": 100.0,
+        "expirations": ["2026-01-30"],
+        "chains": {"2026-01-30": [{"strike": 100.0}]},
+    }
+    (cache_dir / "OLD.json").write_text(json.dumps(payload))
+
+    with patch("optionctl.cache._is_cache_valid", return_value=True):
+        result = read_chain_cache("OLD")
+
+    assert result is None
+
+
 def test_write_chain_cache_ticker_uppercase(cache_dir, sample_chain_df):
     """Ticker is stored uppercase."""
-    write_chain_cache("aapl", 150.0, ["2026-01-30"], {"2026-01-30": sample_chain_df})
+    write_chain_cache("aapl", 150.0, ["2026-01-30"], _make_chains(sample_chain_df))
 
     assert (cache_dir / "AAPL.json").exists()
     data = json.loads((cache_dir / "AAPL.json").read_text())
@@ -243,7 +270,7 @@ def test_write_chain_cache_ticker_uppercase(cache_dir, sample_chain_df):
 
 def test_write_chain_cache_no_earnings(cache_dir, sample_chain_df):
     """Cache can be written without earnings data."""
-    write_chain_cache("TEST", 100.0, ["2026-01-30"], {"2026-01-30": sample_chain_df})
+    write_chain_cache("TEST", 100.0, ["2026-01-30"], _make_chains(sample_chain_df))
 
     data = json.loads((cache_dir / "TEST.json").read_text())
     assert data["days_to_earnings"] is None
@@ -258,10 +285,32 @@ def test_write_chain_cache_handles_timestamps(cache_dir):
         }
     )
     # Should not raise
-    write_chain_cache("TSTEST", 100.0, ["2026-01-30"], {"2026-01-30": df})
+    write_chain_cache("TSTEST", 100.0, ["2026-01-30"], _make_chains(df))
 
     data = json.loads((cache_dir / "TSTEST.json").read_text())
     assert "2026-01-30" in data["chains"]
+
+
+def test_v2_cache_roundtrip(cache_dir, sample_chain_df):
+    """V2 format roundtrip with calls and puts."""
+    puts_df = pd.DataFrame(
+        {
+            "strike": [90.0],
+            "ask": [0.01],
+            "bid": [0.0],
+            "volume": [200],
+            "openInterest": [50],
+        }
+    )
+    chains = {"2026-01-30": {"calls": sample_chain_df, "puts": puts_df}}
+    write_chain_cache("ROUND", 100.0, ["2026-01-30"], chains)
+
+    with patch("optionctl.cache._is_cache_valid", return_value=True):
+        result = read_chain_cache("ROUND")
+
+    assert result is not None
+    assert len(result["chains"]["2026-01-30"]["calls"]) == 2
+    assert len(result["chains"]["2026-01-30"]["puts"]) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -277,8 +326,8 @@ def test_clear_cache_empty():
 
 def test_clear_cache_with_files(cache_dir, sample_chain_df):
     """Clear removes all cache files."""
-    write_chain_cache("AAPL", 150.0, ["2026-01-30"], {"2026-01-30": sample_chain_df})
-    write_chain_cache("MSFT", 400.0, ["2026-01-30"], {"2026-01-30": sample_chain_df})
+    write_chain_cache("AAPL", 150.0, ["2026-01-30"], _make_chains(sample_chain_df))
+    write_chain_cache("MSFT", 400.0, ["2026-01-30"], _make_chains(sample_chain_df))
 
     count = clear_cache()
     assert count == 2
@@ -302,8 +351,8 @@ def test_get_cache_stats_empty():
 @pytest.mark.usefixtures("cache_dir")
 def test_get_cache_stats_with_files(sample_chain_df):
     """Stats with cached files."""
-    write_chain_cache("AAPL", 150.0, ["2026-01-30"], {"2026-01-30": sample_chain_df})
-    write_chain_cache("MSFT", 400.0, ["2026-01-30"], {"2026-01-30": sample_chain_df})
+    write_chain_cache("AAPL", 150.0, ["2026-01-30"], _make_chains(sample_chain_df))
+    write_chain_cache("MSFT", 400.0, ["2026-01-30"], _make_chains(sample_chain_df))
 
     stats = get_cache_stats()
     assert stats["count"] == 2

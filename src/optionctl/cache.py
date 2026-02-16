@@ -92,6 +92,9 @@ def _is_cache_valid(cached_time: datetime) -> bool:
     return False
 
 
+_CACHE_VERSION = 2
+
+
 def read_chain_cache(ticker: str) -> dict | None:
     """Read cached option chain data for a ticker.
 
@@ -99,7 +102,7 @@ def read_chain_cache(ticker: str) -> dict | None:
         ticker: Stock ticker symbol.
 
     Returns:
-        Dict with chain data, or None if cache miss/stale.
+        Dict with chain data, or None if cache miss/stale/old version.
     """
     path = _CACHE_DIR / f"{ticker.upper()}.json"
 
@@ -109,6 +112,10 @@ def read_chain_cache(ticker: str) -> dict | None:
     try:
         data = json.loads(path.read_text())
         cached_time = datetime.fromisoformat(data["timestamp"])
+
+        if data.get("cache_version", 1) < _CACHE_VERSION:
+            logger.debug("Cache version outdated for %s, forcing re-fetch", ticker)
+            return None
 
         if not _is_cache_valid(cached_time):
             logger.debug("Cache expired for %s", ticker)
@@ -121,11 +128,24 @@ def read_chain_cache(ticker: str) -> dict | None:
         return data
 
 
+def _df_to_records(df: pd.DataFrame) -> list[dict]:
+    """Convert a DataFrame to a list of dicts, handling pandas Timestamps.
+
+    Args:
+        df: DataFrame to convert.
+
+    Returns:
+        List of record dicts.
+    """
+    json_str = df.to_json(orient="records")
+    return json.loads(json_str) if json_str else []
+
+
 def write_chain_cache(
     ticker: str,
     underlying_price: float,
     expirations: list[str],
-    chains: dict[str, pd.DataFrame],
+    chains: dict[str, dict[str, pd.DataFrame]],
     days_to_earnings: int | None = None,
 ) -> None:
     """Write option chain data to cache.
@@ -134,21 +154,22 @@ def write_chain_cache(
         ticker: Stock ticker symbol.
         underlying_price: Current stock price.
         expirations: List of expiration date strings.
-        chains: Dict mapping expiration to calls DataFrame.
+        chains: Dict mapping expiration to {"calls": df, "puts": df}.
         days_to_earnings: Days until next earnings, or None.
     """
     try:
         _CACHE_DIR.mkdir(parents=True, exist_ok=True)
         path = _CACHE_DIR / f"{ticker.upper()}.json"
 
-        # Convert DataFrames to lists of dicts (use to_json to handle Timestamps)
-        chains_data = {}
-        for exp, df in chains.items():
-            # to_json handles pandas Timestamps, then parse back to dict
-            json_str = df.to_json(orient="records")
-            chains_data[exp] = json.loads(json_str) if json_str else []
+        chains_data: dict[str, dict[str, list[dict]]] = {}
+        for exp, side_dfs in chains.items():
+            chains_data[exp] = {
+                "calls": _df_to_records(side_dfs["calls"]),
+                "puts": _df_to_records(side_dfs["puts"]),
+            }
 
         payload = {
+            "cache_version": _CACHE_VERSION,
             "timestamp": datetime.now(UTC).isoformat(),
             "ticker": ticker.upper(),
             "underlying_price": underlying_price,

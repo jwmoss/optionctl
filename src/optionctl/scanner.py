@@ -15,13 +15,14 @@ import yfinance as yf
 from optionctl.cache import read_chain_cache, write_chain_cache, write_no_options_cache
 from optionctl.candidates import CandidateContext, build_candidate_from_row
 from optionctl.filters import apply_filters
-from optionctl.models import ScanResult
+from optionctl.history import compute_vol_vs_avg, record_volume_snapshot
+from optionctl.models import ScanResult, Side
 from optionctl.scoring import score_candidates
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
-    from optionctl.models import OptionCandidate, ScoringWeights
+    from optionctl.models import OptionCandidate, OptionDataSource, ScoringWeights
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +181,7 @@ def _fetch_chains_within_dte(
     expirations: tuple[str, ...],
     today: date,
     max_dte: int,
-) -> tuple[list[str], dict[str, pd.DataFrame]]:
+) -> tuple[list[str], dict[str, dict[str, pd.DataFrame]]]:
     """Fetch option chains filtered by DTE.
 
     Args:
@@ -190,9 +191,9 @@ def _fetch_chains_within_dte(
         max_dte: Maximum DTE to fetch (0 for all).
 
     Returns:
-        Tuple of (filtered_expirations, chains dict).
+        Tuple of (filtered_expirations, chains dict with calls+puts per exp).
     """
-    chains: dict[str, pd.DataFrame] = {}
+    chains: dict[str, dict[str, pd.DataFrame]] = {}
     filtered_expirations: list[str] = []
 
     for exp_str in expirations:
@@ -206,7 +207,7 @@ def _fetch_chains_within_dte(
         filtered_expirations.append(exp_str)
         try:
             chain = stock.option_chain(exp_str)
-            chains[exp_str] = chain.calls
+            chains[exp_str] = {"calls": chain.calls, "puts": chain.puts}
         except Exception:
             logger.warning("Failed to fetch chain for %s %s", stock.ticker, exp_str)
             continue
@@ -258,22 +259,37 @@ def _fetch_and_cache_ticker(
     # Cache it
     write_chain_cache(ticker, underlying_price, filtered_expirations, chains, days_to_earnings)
 
+    # Convert to serializable format
+    chains_data: dict[str, dict[str, list[dict]]] = {}
+    for exp, side_dfs in chains.items():
+        chains_data[exp] = {
+            "calls": side_dfs["calls"].to_dict(orient="records"),
+            "puts": side_dfs["puts"].to_dict(orient="records"),
+        }
+
     return {
         "ticker": ticker,
         "underlying_price": underlying_price,
         "expirations": filtered_expirations,
-        "chains": {exp: df.to_dict(orient="records") for exp, df in chains.items()},
+        "chains": chains_data,
         "days_to_earnings": days_to_earnings,
     }
 
 
-def _get_ticker_data(ticker: str, *, use_cache: bool, fetch_enhanced: bool) -> dict | None:
+def _get_ticker_data(
+    ticker: str,
+    *,
+    use_cache: bool,
+    fetch_enhanced: bool,
+    source: OptionDataSource | None = None,
+) -> dict | None:
     """Get option chain data for a ticker from cache or fetch.
 
     Args:
         ticker: Stock ticker symbol.
         use_cache: Whether to use disk cache.
         fetch_enhanced: Whether to fetch enhanced signals.
+        source: Optional data source; uses built-in yfinance fetcher if None.
 
     Returns:
         Dict with chain data, or None if unavailable/no options.
@@ -281,12 +297,33 @@ def _get_ticker_data(ticker: str, *, use_cache: bool, fetch_enhanced: bool) -> d
     if use_cache:
         data = read_chain_cache(ticker)
         if data is not None:
-            # Return None for no-options markers to signal skip
             if data.get("no_options"):
                 return None
             return data
 
+    if source is not None:
+        return source.fetch_ticker_data(ticker, fetch_enhanced=fetch_enhanced)
+
     return _fetch_and_cache_ticker(ticker, fetch_enhanced=fetch_enhanced)
+
+
+def _sides_to_scan(side: Side) -> list[str]:
+    """Return the list of side keys to iterate over.
+
+    Args:
+        side: Which option side(s) to scan.
+
+    Returns:
+        List of side keys ("calls", "puts", or both).
+    """
+    if side == Side.CALLS:
+        return ["calls"]
+    if side == Side.PUTS:
+        return ["puts"]
+    return ["calls", "puts"]
+
+
+_SIDE_TO_CONTRACT_TYPE = {"calls": "call", "puts": "put"}
 
 
 def scan_ticker(
@@ -296,10 +333,12 @@ def scan_ticker(
     max_price: float = 0.01,
     min_volume: int = 100,
     *,
+    side: Side = Side.CALLS,
     fetch_enhanced: bool = True,
     use_cache: bool = True,
+    source: OptionDataSource | None = None,
 ) -> list[OptionCandidate]:
-    """Scan a single ticker for penny OTM call options.
+    """Scan a single ticker for penny OTM options.
 
     Args:
         ticker: Stock ticker symbol.
@@ -307,13 +346,17 @@ def scan_ticker(
         max_dte: Maximum days to expiration.
         max_price: Maximum ask price (default $0.01).
         min_volume: Minimum contract volume.
+        side: Which option side(s) to scan.
         fetch_enhanced: Whether to fetch enhanced signals (earnings, etc.).
         use_cache: Whether to use disk cache for results.
+        source: Optional data source; uses built-in yfinance fetcher if None.
 
     Returns:
         List of qualifying option candidates.
     """
-    data = _get_ticker_data(ticker, use_cache=use_cache, fetch_enhanced=fetch_enhanced)
+    data = _get_ticker_data(
+        ticker, use_cache=use_cache, fetch_enhanced=fetch_enhanced, source=source
+    )
     if data is None:
         return []
 
@@ -321,20 +364,14 @@ def scan_ticker(
     candidates: list[OptionCandidate] = []
     underlying_price = data["underlying_price"]
     days_to_earnings = data.get("days_to_earnings")
+    scan_sides = _sides_to_scan(side)
 
-    for exp_str, chain_records in data["chains"].items():
+    for exp_str, chain_data in data["chains"].items():
         exp_date = _parse_expiration(exp_str)
         dte = (exp_date - today).days
 
         if dte < min_dte or dte > max_dte:
             continue
-
-        # Convert cached records back to DataFrame
-        df = pd.DataFrame(chain_records)
-        if df.empty:
-            continue
-
-        filtered = apply_filters(df, underlying_price, max_price, min_volume)
 
         context = CandidateContext(
             expiration=exp_date,
@@ -342,14 +379,28 @@ def scan_ticker(
             dte=dte,
             days_to_earnings=days_to_earnings,
         )
-        for _, row in filtered.iterrows():
-            candidates.append(
-                build_candidate_from_row(
-                    ticker=ticker,
-                    row=row,
-                    context=context,
+
+        for side_key in scan_sides:
+            chain_records = chain_data.get(side_key, [])
+            contract_type = _SIDE_TO_CONTRACT_TYPE[side_key]
+
+            df = pd.DataFrame(chain_records)
+            if df.empty:
+                continue
+
+            filtered = apply_filters(df, underlying_price, max_price, min_volume)
+            for _, row in filtered.iterrows():
+                candidates.append(
+                    build_candidate_from_row(
+                        ticker=ticker,
+                        row=row,
+                        context=context,
+                        contract_type=contract_type,
+                    )
                 )
-            )
+
+    for c in candidates:
+        c.vol_vs_avg = compute_vol_vs_avg(c.volume, c.contract_symbol)
 
     return candidates
 
@@ -363,8 +414,10 @@ def scan_universe(
     progress_callback: Callable[[str, int, int], None] | None = None,
     weights: ScoringWeights | None = None,
     *,
+    side: Side = Side.CALLS,
     fetch_enhanced: bool = True,
     use_cache: bool = True,
+    source: OptionDataSource | None = None,
 ) -> ScanResult:
     """Scan multiple tickers for penny option candidates.
 
@@ -376,8 +429,10 @@ def scan_universe(
         min_volume: Minimum contract volume.
         progress_callback: Optional callback(ticker, current, total) for progress.
         weights: Optional custom scoring weights.
+        side: Which option side(s) to scan.
         fetch_enhanced: Whether to fetch enhanced signals.
         use_cache: Whether to use disk cache for results.
+        source: Optional data source; uses built-in yfinance fetcher if None.
 
     Returns:
         ScanResult with scored candidates and scan metadata.
@@ -392,8 +447,10 @@ def scan_universe(
             max_dte,
             max_price,
             min_volume,
+            side=side,
             fetch_enhanced=fetch_enhanced,
             use_cache=use_cache,
+            source=source,
         )
         if candidates:
             result.tickers_with_options += 1
@@ -406,6 +463,7 @@ def scan_universe(
         _scan_one_ticker,
     )
 
+    record_volume_snapshot(all_candidates)
     result.candidates = score_candidates(all_candidates, weights)
     return result
 
@@ -414,6 +472,8 @@ def warm_cache(
     tickers: list[str],
     progress_callback: Callable[[str, int, int], None] | None = None,
     max_dte: int = _DEFAULT_MAX_DTE,
+    *,
+    source: OptionDataSource | None = None,
 ) -> int:
     """Pre-fetch and cache option chain data for tickers.
 
@@ -421,6 +481,7 @@ def warm_cache(
         tickers: List of ticker symbols to cache.
         progress_callback: Optional callback(ticker, current, total) for progress.
         max_dte: Maximum days to expiration to fetch (0 for all).
+        source: Optional data source; uses built-in yfinance fetcher if None.
 
     Returns:
         Number of tickers successfully cached.
@@ -429,7 +490,11 @@ def warm_cache(
 
     def _warm_one_ticker(ticker: str) -> None:
         nonlocal cached_count
-        if _fetch_and_cache_ticker(ticker, max_dte=max_dte) is not None:
+        if source is not None:
+            data = source.fetch_ticker_data(ticker, max_dte=max_dte)
+        else:
+            data = _fetch_and_cache_ticker(ticker, max_dte=max_dte)
+        if data is not None:
             cached_count += 1
 
     _process_tickers(

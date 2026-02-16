@@ -59,15 +59,15 @@ def proximity_pct(underlying_price: float, strike: float) -> float:
 
 
 def apply_filters(
-    calls_df: pd.DataFrame,
+    options_df: pd.DataFrame,
     underlying_price: float,
     max_price: float = 0.01,
     min_volume: int = 100,
 ) -> pd.DataFrame:
-    """Apply penny option filters to a DataFrame of call options.
+    """Apply penny option filters to a DataFrame of options (calls or puts).
 
     Args:
-        calls_df: DataFrame from yfinance option_chain().calls.
+        options_df: DataFrame from yfinance option_chain().calls or .puts.
         underlying_price: Current price of the underlying.
         max_price: Maximum ask price for penny options.
         min_volume: Minimum contract volume.
@@ -75,7 +75,7 @@ def apply_filters(
     Returns:
         Filtered DataFrame with only qualifying contracts.
     """
-    df = calls_df.copy()
+    df = options_df.copy()
 
     # Drop rows with missing critical data
     df = df.dropna(subset=["ask", "volume", "openInterest"])

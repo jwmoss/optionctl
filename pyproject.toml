@@ -18,6 +18,7 @@ dependencies = [
     "rich>=13.0",
     "pandas>=2.0",
     "lxml>=5.0",
+    "httpx>=0.27",
 ]
 requires-python = ">=3.11"
 
@@ -112,10 +113,19 @@ max-positional-args = 5
 "src/optionctl/spy.py" = [
     "BLE001",  # yfinance raises unpredictable exceptions
 ]
+"src/optionctl/polygon.py" = [
+    "BLE001",  # httpx raises unpredictable exceptions
+    "PLC0415",  # deferred imports for conditional logic
+]
+"src/optionctl/yfinance_source.py" = [
+    "BLE001",  # yfinance raises unpredictable exceptions
+]
 "test/**/*.py" = [
     "ANN",   # no type annotations in tests
+    "ARG001",  # fixtures used for side effects look unused
     "D",     # no docstrings in tests
     "S101",  # asserts are expected in tests
+    "SLF001",  # tests need to access private members
     "PLR2004",  # allow magic values in tests
     "PLR0913",  # parametrized/mock tests often have many args
     "PLC0415",  # allow deferred imports in tests

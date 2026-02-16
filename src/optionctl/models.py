@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from enum import StrEnum
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from datetime import date
@@ -14,6 +15,34 @@ DEFAULT_WEIGHT_VOLUME = 15.0
 DEFAULT_WEIGHT_PROXIMITY = 25.0
 DEFAULT_WEIGHT_IV = 20.0
 DEFAULT_WEIGHT_EARNINGS = 15.0
+
+
+class Side(StrEnum):
+    """Which option side(s) to scan."""
+
+    CALLS = "calls"
+    PUTS = "puts"
+    BOTH = "both"
+
+
+@runtime_checkable
+class OptionDataSource(Protocol):
+    """Protocol for option data providers."""
+
+    def fetch_ticker_data(
+        self, ticker: str, *, fetch_enhanced: bool = True, max_dte: int = 14
+    ) -> dict | None:
+        """Fetch option chain data for a ticker.
+
+        Args:
+            ticker: Stock ticker symbol.
+            fetch_enhanced: Whether to fetch earnings data.
+            max_dte: Maximum days to expiration to fetch (0 for all).
+
+        Returns:
+            Dict with chain data, or None on failure.
+        """
+        ...
 
 
 @dataclass
@@ -38,6 +67,7 @@ class OptionCandidate:
     contract_symbol: str = ""
     # Enhanced signals
     days_to_earnings: int | None = None  # days until next earnings, None if unknown
+    vol_vs_avg: float | None = None  # current volume vs rolling average
 
 
 @dataclass
@@ -50,6 +80,7 @@ class ScoringWeights:
     iv: float = DEFAULT_WEIGHT_IV
     # Enhanced signal weights
     earnings: float = DEFAULT_WEIGHT_EARNINGS  # catalyst detection
+    vol_vs_avg: float = 0.0  # disabled by default, opt-in
 
 
 @dataclass

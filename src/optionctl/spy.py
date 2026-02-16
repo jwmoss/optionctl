@@ -10,6 +10,7 @@ import yfinance as yf
 
 from optionctl.candidates import CandidateContext, build_candidate_from_row
 from optionctl.filters import apply_filters
+from optionctl.models import Side
 from optionctl.scoring import score_candidates
 
 if TYPE_CHECKING:
@@ -62,13 +63,16 @@ def find_penny_0dte(
     max_price: float = 0.01,
     min_volume: int = 100,
     weights: ScoringWeights | None = None,
+    *,
+    side: Side = Side.CALLS,
 ) -> list[OptionCandidate]:
-    """Find SPY 0DTE OTM call options priced at pennies.
+    """Find SPY 0DTE OTM options priced at pennies.
 
     Args:
         max_price: Maximum ask price (default $0.01).
         min_volume: Minimum contract volume.
         weights: Optional custom scoring weights.
+        side: Which option side(s) to scan.
 
     Returns:
         Scored list of penny 0DTE candidates.
@@ -87,18 +91,26 @@ def find_penny_0dte(
         logger.warning("Failed to fetch SPY option chain for %s", exp_str)
         return []
 
-    filtered = apply_filters(chain.calls, spy_price, max_price, min_volume)
     exp_date = date.fromisoformat(exp_str)
     context = CandidateContext(expiration=exp_date, underlying_price=spy_price, dte=0)
-
     candidates: list[OptionCandidate] = []
-    for _, row in filtered.iterrows():
-        candidates.append(
-            build_candidate_from_row(
-                ticker=SPY_TICKER,
-                row=row,
-                context=context,
+
+    if side in (Side.CALLS, Side.BOTH):
+        filtered = apply_filters(chain.calls, spy_price, max_price, min_volume)
+        for _, row in filtered.iterrows():
+            candidates.append(
+                build_candidate_from_row(
+                    ticker=SPY_TICKER, row=row, context=context, contract_type="call"
+                )
             )
-        )
+
+    if side in (Side.PUTS, Side.BOTH):
+        filtered = apply_filters(chain.puts, spy_price, max_price, min_volume)
+        for _, row in filtered.iterrows():
+            candidates.append(
+                build_candidate_from_row(
+                    ticker=SPY_TICKER, row=row, context=context, contract_type="put"
+                )
+            )
 
     return score_candidates(candidates, weights)

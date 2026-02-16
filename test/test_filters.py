@@ -146,3 +146,39 @@ def test_apply_filters_uses_make_calls_df(make_calls_df):
     result = apply_filters(df, underlying_price=50.0, max_price=0.01, min_volume=100)
     assert len(result) == 1
     assert result.iloc[0]["strike"] == 100.0
+
+
+def test_apply_filters_otm_puts():
+    """OTM puts (strike < underlying) pass the inTheMoney filter."""
+    df = pd.DataFrame(
+        {
+            "strike": [80.0, 90.0],
+            "ask": [0.01, 0.01],
+            "bid": [0.0, 0.0],
+            "lastPrice": [0.01, 0.01],
+            "volume": [500, 300],
+            "openInterest": [100, 200],
+            "impliedVolatility": [0.5, 0.6],
+            "inTheMoney": [False, False],
+        }
+    )
+    result = apply_filters(df, underlying_price=100.0, max_price=0.01, min_volume=100)
+    assert len(result) == 2
+
+
+def test_apply_filters_itm_puts_filtered():
+    """ITM puts (strike > underlying) are filtered out by inTheMoney."""
+    df = pd.DataFrame(
+        {
+            "strike": [110.0, 120.0],
+            "ask": [0.01, 0.01],
+            "bid": [0.0, 0.0],
+            "lastPrice": [0.01, 0.01],
+            "volume": [500, 300],
+            "openInterest": [100, 200],
+            "impliedVolatility": [0.5, 0.6],
+            "inTheMoney": [True, True],
+        }
+    )
+    result = apply_filters(df, underlying_price=100.0, max_price=0.01, min_volume=100)
+    assert len(result) == 0

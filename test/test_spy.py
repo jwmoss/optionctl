@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from optionctl.models import ScoringWeights
+from optionctl.models import ScoringWeights, Side
 from optionctl.spy import _get_spy_0dte_expiration, _get_spy_price, find_penny_0dte
 
 # ---------------------------------------------------------------------------
@@ -112,3 +112,28 @@ def test_find_penny_0dte_custom_weights(_mock_exp, _mock_price, mock_yf, make_ca
     )
     weights = ScoringWeights(vol_oi=0, volume=100, proximity=0, iv=0)
     assert len(find_penny_0dte(weights=weights)) == 1
+
+
+@patch("optionctl.spy.yf")
+@patch("optionctl.spy._get_spy_price", return_value=600.0)
+@patch("optionctl.spy._get_spy_0dte_expiration", return_value="2026-01-27")
+def test_find_penny_0dte_puts(_mock_exp, _mock_price, mock_yf, make_calls_df):
+    calls = make_calls_df(strikes=[620.0])
+    puts = make_calls_df(strikes=[580.0, 570.0])
+    mock_yf.Ticker.return_value.option_chain.return_value = SimpleNamespace(calls=calls, puts=puts)
+    result = find_penny_0dte(side=Side.PUTS)
+    assert all(c.contract_type == "put" for c in result)
+    assert len(result) == 2
+
+
+@patch("optionctl.spy.yf")
+@patch("optionctl.spy._get_spy_price", return_value=600.0)
+@patch("optionctl.spy._get_spy_0dte_expiration", return_value="2026-01-27")
+def test_find_penny_0dte_both(_mock_exp, _mock_price, mock_yf, make_calls_df):
+    calls = make_calls_df(strikes=[620.0])
+    puts = make_calls_df(strikes=[580.0])
+    mock_yf.Ticker.return_value.option_chain.return_value = SimpleNamespace(calls=calls, puts=puts)
+    result = find_penny_0dte(side=Side.BOTH)
+    types = {c.contract_type for c in result}
+    assert "call" in types
+    assert "put" in types

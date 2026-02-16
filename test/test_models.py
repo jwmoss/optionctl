@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from optionctl.models import OptionCandidate, ScanResult
+from optionctl.models import OptionCandidate, ScanResult, Side
 
 
 def test_option_candidate_defaults() -> None:
@@ -23,6 +23,7 @@ def test_option_candidate_defaults() -> None:
     assert c.dte == 0
     assert c.underlying_price == 0.0
     assert c.contract_symbol == ""
+    assert c.vol_vs_avg is None
 
 
 def test_scan_result_defaults() -> None:
@@ -49,3 +50,10 @@ def test_scan_result_with_candidates() -> None:
     r = ScanResult(candidates=[c], tickers_scanned=10, tickers_with_options=1)
     assert len(r.candidates) == 1
     assert r.tickers_scanned == 10
+
+
+def test_side_enum_values() -> None:
+    assert Side.CALLS.value == "calls"
+    assert Side.PUTS.value == "puts"
+    assert Side.BOTH.value == "both"
+    assert Side("calls") == Side.CALLS
