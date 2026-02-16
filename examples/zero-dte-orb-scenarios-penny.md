@@ -24,6 +24,43 @@ uv run optionctl zero-dte signal \
   --delta-max 0.20
 ```
 
+## Penny Timeline (ET): What To Run And Expect
+
+| Time | What to run | What to expect | What to do |
+|------|-------------|----------------|------------|
+| 09:30-09:44 | `opening-check` | `waiting` or `no_trade` | Buy nothing |
+| 09:45-10:20 | `signal-penny` every 2 min | First valid breakout attempts | Trade only confirmed `bullish`/`bearish` |
+| 10:20-10:45 | `signal-penny` every 3-5 min | More fakeouts, lower quality | Trade only if fill is still near `0.01` |
+| 10:45-11:30 | no new entries | Theta decay accelerates | Manage open trades only |
+| 11:30 | n/a | Time-stop point | Close all open positions |
+
+## What To Buy (Exact Rules)
+
+When you get `SPY ORB signal: bullish`:
+
+1. Buy the first `C` row in the table that still has `Ask 0.01`.
+2. Require `Delta` in `0.01-0.20`.
+3. Prefer higher `Vol` when multiple rows qualify.
+
+When you get `SPY ORB signal: bearish`:
+
+1. Buy the first `P` row in the table that still has `Ask 0.01`.
+2. Require absolute `Delta` in `0.01-0.20`.
+3. Prefer higher `Vol` when multiple rows qualify.
+
+Skip the setup if:
+
+1. top row no longer fills near `0.01`
+2. all rows are illiquid
+3. signal happens after `10:45 ET`
+
+## Entry And Fill Protocol
+
+1. Enter within 1 minute of the valid signal.
+2. Place limit at `0.01`.
+3. If not filled quickly, allow one reprice to `0.02`.
+4. If still not filled, cancel and skip (do not chase).
+
 ## Core Rule For Contract Selection
 
 When output is `bullish` or `bearish`, use the first row in the contract table
@@ -57,6 +94,12 @@ Practical interpretation:
 2. if no follow-through, exit fast on momentum failure
 3. treat risk as potentially full premium loss
 
+What to expect:
+
+1. many trades will fail quickly
+2. a smaller number can move very fast
+3. late entries usually perform worse due to decay
+
 ## Scenario 1: Clean Bullish Breakout, Cheap Calls Available
 
 Signal output (example):
@@ -77,9 +120,10 @@ SPY      C   689.00  0.01   0.12   4200
 
 Action:
 
-1. Buy near `0.01` quickly after signal.
-2. First take-profit around `0.02`.
-3. Keep runner only if SPY trend remains strong.
+1. At `09:49-09:50 ET`, place `0.01` limit on first call row (`689C` in this example).
+2. If no fill, allow one reprice to `0.02`, then stop.
+3. First take-profit at `0.02`.
+4. Keep runner only if SPY trend remains strong.
 
 ## Scenario 2: Clean Bearish Breakout, Cheap Puts Available
 
@@ -92,9 +136,10 @@ Reason: ORB + RSI confirmed.
 
 Action:
 
-1. Buy first put row near `0.01`.
-2. Take first profit at `0.02`.
-3. Exit remaining size if price snaps back into opening range.
+1. At signal time, buy first put row near `0.01`.
+2. Use same fill rule: `0.01` then single reprice to `0.02` max.
+3. Take first profit at `0.02`.
+4. Exit remaining size if price snaps back into opening range.
 
 ## Scenario 3: `bullish`/`bearish` But Fill Is Not Actually `0.01`
 
@@ -172,6 +217,6 @@ Action:
 
 1. `waiting` -> no trade.
 2. `no_trade` -> no trade.
-3. `bullish`/`bearish` + liquid `0.01` row -> enter quickly, target `0.02`.
+3. `bullish`/`bearish` + liquid `0.01` row before `10:45 ET` -> enter quickly, target `0.02`.
 4. No realistic `0.01` fill -> skip.
 5. Close all open positions by `11:30 ET`.
