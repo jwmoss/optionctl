@@ -3,6 +3,11 @@ set -euo pipefail
 
 # Optional when using Polygon data source:
 # export POLYGON_API_KEY="your-key"
+#
+# Real-time usage (ET):
+# - 09:30-09:44: do not trade, opening range only.
+# - 09:45-11:30: run signal every 1-2 minutes, trade only bullish/bearish output.
+# - Exit on plan output levels: Stop, Target, and Time stop (default 11:30 ET).
 
 echo "1) ORB + RSI signal and 0DTE ideas"
 uv run optionctl zero-dte signal --ticker SPY --source polygon --max-price 3.00 --min-volume 200 --delta-min 0.50 --delta-max 0.60
