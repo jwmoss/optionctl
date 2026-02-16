@@ -389,15 +389,15 @@ def scan_ticker(
                 continue
 
             filtered = apply_filters(df, underlying_price, max_price, min_volume)
-            for _, row in filtered.iterrows():
-                candidates.append(
-                    build_candidate_from_row(
-                        ticker=ticker,
-                        row=row,
-                        context=context,
-                        contract_type=contract_type,
-                    )
+            candidates.extend(
+                build_candidate_from_row(
+                    ticker=ticker,
+                    row=row,
+                    context=context,
+                    contract_type=contract_type,
                 )
+                for row in filtered.to_dict(orient="records")
+            )
 
     for c in candidates:
         c.vol_vs_avg = compute_vol_vs_avg(c.volume, c.contract_symbol)

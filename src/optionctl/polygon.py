@@ -16,16 +16,6 @@ logger = logging.getLogger(__name__)
 _DEFAULT_MAX_DTE = 14
 _RATE_LIMIT_DELAY = 12.0  # seconds between requests (free tier: 5 req/min)
 
-_POLYGON_FIELD_MAP = {
-    "strike_price": "strike",
-    "day.volume": "volume",
-    "day.open": "open",
-    "day.close": "lastPrice",
-    "open_interest": "openInterest",
-    "implied_volatility": "impliedVolatility",
-    "break_even_price": "breakEvenPrice",
-}
-
 
 def _get_api_key() -> str:
     """Read the Polygon API key from the environment.

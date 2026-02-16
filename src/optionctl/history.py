@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -19,6 +20,16 @@ _HISTORY_DIR = Path.home() / ".cache" / "optionctl" / "history"
 def _today_str() -> str:
     """Return today's date as YYYY-MM-DD."""
     return datetime.now(tz=UTC).date().isoformat()
+
+
+@lru_cache(maxsize=256)
+def _read_history_file(path: Path) -> dict[str, int] | None:
+    """Read and parse a history JSON file once per process."""
+    try:
+        data = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+    return data if isinstance(data, dict) else None
 
 
 def record_volume_snapshot(candidates: list[OptionCandidate]) -> None:
@@ -43,6 +54,7 @@ def record_volume_snapshot(candidates: list[OptionCandidate]) -> None:
                 existing[c.contract_symbol] = c.volume
 
         path.write_text(json.dumps(existing))
+        _read_history_file.cache_clear()
     except OSError:
         logger.debug("Failed to write volume history snapshot")
 
@@ -65,12 +77,11 @@ def get_volume_history(contract_symbol: str, days: int = 5) -> list[int]:
         path = _HISTORY_DIR / f"{history_date.isoformat()}.json"
         if not path.exists():
             continue
-        try:
-            data = json.loads(path.read_text())
-            if contract_symbol in data:
-                volumes.append(data[contract_symbol])
-        except (json.JSONDecodeError, OSError):
+        data = _read_history_file(path)
+        if data is None:
             continue
+        if contract_symbol in data:
+            volumes.append(data[contract_symbol])
 
     return volumes
 
@@ -132,5 +143,8 @@ def cleanup_old_history(max_age_days: int = 30) -> int:
                 removed += 1
         except (ValueError, OSError):
             continue
+
+    if removed:
+        _read_history_file.cache_clear()
 
     return removed
