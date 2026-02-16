@@ -143,3 +143,4 @@ This is outside the original ORB delta profile and will usually select farther O
 Use concrete trade examples in:
 
 - `examples/zero-dte-orb-scenarios.md`
+- `examples/zero-dte-orb-scenarios-penny.md`

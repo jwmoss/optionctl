@@ -143,4 +143,5 @@ make test
 - `examples/high-conviction-volume.md` — tighter unusual-flow thresholds.
 - `examples/zero-dte-day-trading.md` — timed daily 0DTE playbook (night-before to post-close).
 - `examples/zero-dte-orb-scenarios.md` — concrete "if X happens, do Y" trade scenarios.
+- `examples/zero-dte-orb-scenarios-penny.md` — `$0.01` penny-contract ORB scenarios.
 - `examples/zero-dte-day-trading.sh` — phase-based helper (`night-before`, `signal`, `plan`).
