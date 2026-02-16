@@ -137,3 +137,9 @@ This is outside the original ORB delta profile and will usually select farther O
 ```bash
 ./examples/zero-dte-day-trading.sh signal-penny
 ```
+
+## Scenario Walkthroughs
+
+Use concrete trade examples in:
+
+- `examples/zero-dte-orb-scenarios.md`

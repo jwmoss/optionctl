@@ -142,4 +142,5 @@ make test
 - `examples/usage.md` — core S&P 500 unusual-flow scans.
 - `examples/high-conviction-volume.md` — tighter unusual-flow thresholds.
 - `examples/zero-dte-day-trading.md` — timed daily 0DTE playbook (night-before to post-close).
+- `examples/zero-dte-orb-scenarios.md` — concrete "if X happens, do Y" trade scenarios.
 - `examples/zero-dte-day-trading.sh` — phase-based helper (`night-before`, `signal`, `plan`).
