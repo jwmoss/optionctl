@@ -3,149 +3,65 @@
 ## Installation
 
 ```bash
-# Clone and install
 git clone git@github.com:jwmoss/optionctl.git
 cd optionctl
 uv sync
 ```
 
-## Running with `uv run`
-
-All commands are run through `uv run` -- no need to activate a virtualenv.
-
-### Basic Scan
-
-Scan the S&P 500 for $0.01 OTM calls expiring within 14 days:
+## Core Workflow (S&P 500 Unusual Flow)
 
 ```bash
 uv run optionctl scan
 ```
 
-### Scan by Universe
+This scans the full S&P 500 and ranks contracts by unusual-flow score.
+
+## Tighten Signal Quality
 
 ```bash
-# Top 50 high-volume stocks (faster than S&P 500)
-uv run optionctl scan --universe volume
+# Stronger unusual activity threshold
+uv run optionctl scan --min-vol-oi 2.0 --min-volume 500
 
-# Top 10 only
-uv run optionctl scan --universe volume --top-n 10
+# Near-term contracts only
+uv run optionctl scan --min-dte 0 --max-dte 7
 
-# Custom watchlist
-echo -e "AAPL\nNVDA\nTSLA\nAMD\nINTC" > tickers.txt
-uv run optionctl scan --universe watchlist --watchlist-file tickers.txt
+# Calls or puts only
+uv run optionctl scan --side calls
+uv run optionctl scan --side puts
 ```
 
-### Filter by Expiration
+## Output Formats
 
 ```bash
-# S&P 500, same-week only (0-5 DTE)
-uv run optionctl scan --universe sp500 --max-dte 5
+# JSON
+uv run optionctl scan --output json > results.json
 
-# Same-week only (0-5 DTE) on high-volume stocks
-uv run optionctl scan --universe volume --min-dte 0 --max-dte 5
+# CSV
+uv run optionctl scan --output csv > results.csv
 
-# Next week only
-uv run optionctl scan --universe volume --min-dte 6 --max-dte 14
+# Show everything (no row cap)
+uv run optionctl scan --all
 ```
 
-### Adjust Price and Volume Thresholds
+## Cache
 
 ```bash
-# Find options up to $0.02 (doubles the candidate pool)
-uv run optionctl scan --universe volume --max-price 0.02
+# Warm S&P 500 chains before scan
+uv run optionctl cache warm
 
-# Only show contracts with 500+ volume
-uv run optionctl scan --universe volume --min-volume 500
+# Force fresh data on scan
+uv run optionctl scan --refresh
 ```
 
-### Output Formats
+## jq Examples
 
 ```bash
-# Rich table (default)
-uv run optionctl scan --universe volume --top-n 10
+# Top 10 contracts by score
+uv run optionctl scan --output json | jq '.[0:10]'
 
-# JSON (pipe to jq, save to file, etc.)
-uv run optionctl scan --universe volume --top-n 10 --output json
-uv run optionctl scan --universe volume --top-n 10 --output json > results.json
+# Only SPY contracts
+uv run optionctl scan --output json | jq '[.[] | select(.ticker == "SPY")]'
 
-# CSV (open in Excel, import to Google Sheets, etc.)
-uv run optionctl scan --universe volume --top-n 10 --output csv
-uv run optionctl scan --universe volume --top-n 10 --output csv > results.csv
-```
-
-## Custom Scoring Weights
-
-The score is a composite of four signals. Default weights sum to 100:
-
-| Flag | Default | Signal |
-|------|---------|--------|
-| `--w-vol-oi` | 30 | Volume/OI ratio (unusual activity) |
-| `--w-volume` | 15 | Raw volume (liquidity + conviction) |
-| `--w-proximity` | 30 | Strike proximity (chance of going ITM) |
-| `--w-iv` | 25 | Implied volatility (expected move) |
-
-### Examples
-
-```bash
-# Volume-heavy scoring (prioritize liquidity)
-uv run optionctl scan --universe volume --w-vol-oi 20 --w-volume 40 --w-proximity 20 --w-iv 20
-
-# Pure volume sort
-uv run optionctl scan --universe volume --w-vol-oi 0 --w-volume 100 --w-proximity 0 --w-iv 0
-
-# Proximity-focused (closest to the money)
-uv run optionctl scan --universe volume --w-vol-oi 10 --w-volume 10 --w-proximity 60 --w-iv 20
-
-# IV-focused (biggest expected moves)
-uv run optionctl scan --universe volume --w-vol-oi 10 --w-volume 10 --w-proximity 20 --w-iv 60
-```
-
-## Combining with Other Tools
-
-### Filter JSON with jq
-
-```bash
-# Top 5 by score
-uv run optionctl scan --universe volume --output json | jq '.[0:5]'
-
-# Only NVDA contracts
-uv run optionctl scan --universe volume --output json | jq '[.[] | select(.ticker == "NVDA")]'
-
-# Contracts with Vol/OI > 2
-uv run optionctl scan --universe volume --output json | jq '[.[] | select(.volume_oi_ratio > 2)]'
-```
-
-### Save and Compare Runs
-
-```bash
-# Morning scan
-uv run optionctl scan --universe volume --output json > morning.json
-
-# Afternoon scan
-uv run optionctl scan --universe volume --output json > afternoon.json
-
-# Diff with jq
-diff <(jq '.[].contract_symbol' morning.json) <(jq '.[].contract_symbol' afternoon.json)
-```
-
-## Development
-
-```bash
-# Install dev dependencies
-uv sync --all-groups
-
-# Run linter
-uv run ruff format --check && uv run ruff check
-
-# Run type checker
-uv run ty check
-
-# Run tests
-uv run pytest -svv --cov=optionctl test/
-
-# Or use Makefile shortcuts
-make dev      # install everything
-make lint     # ruff + ty + interrogate
-make test     # pytest with coverage
-make format   # auto-fix formatting
+# High conviction unusual flow
+uv run optionctl scan --output json | jq '[.[] | select(.volume_oi_ratio >= 2 and .volume >= 500)]'
 ```

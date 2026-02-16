@@ -135,6 +135,31 @@ def test_apply_filters_no_matches():
     assert len(result) == 0
 
 
+def test_apply_filters_min_vol_oi_threshold():
+    df = pd.DataFrame(
+        {
+            "strike": [110.0, 120.0],
+            "ask": [0.01, 0.01],
+            "bid": [0.0, 0.0],
+            "lastPrice": [0.01, 0.01],
+            "volume": [100, 400],
+            "openInterest": [200, 100],
+            "impliedVolatility": [0.4, 0.4],
+            "inTheMoney": [False, False],
+        }
+    )
+    result = apply_filters(
+        df,
+        underlying_price=100.0,
+        max_price=0.01,
+        min_volume=100,
+        min_vol_oi=1.0,
+    )
+    assert len(result) == 1
+    assert result.iloc[0]["strike"] == 120.0
+    assert result.iloc[0]["volumeOiRatio"] == 4.0
+
+
 def test_apply_filters_uses_make_calls_df(make_calls_df):
     """Demonstrate using the conftest factory fixture."""
     df = make_calls_df(
