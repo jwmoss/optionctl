@@ -57,8 +57,27 @@ case "$phase" in
     ;;
   night-before)
     echo "Night-before system check (connectivity + API only)."
-    echo "Expected outside the live window: waiting/no_trade."
-    uv run optionctl zero-dte signal --ticker "$TICKER" --source "$SOURCE"
+    tmp_output="$(mktemp)"
+    if uv run optionctl zero-dte signal --ticker "$TICKER" --source "$SOURCE" >"$tmp_output" 2>&1; then
+      signal_line="$(grep -m1 "ORB signal:" "$tmp_output" || true)"
+      session_line="$(grep -m1 "Session date (ET):" "$tmp_output" || true)"
+      reason_line="$(grep -m1 "^Reason:" "$tmp_output" || true)"
+      today_et="$(TZ=America/New_York date +%F)"
+
+      echo "System check: OK"
+      [[ -n "$signal_line" ]] && echo "$signal_line"
+      [[ -n "$session_line" ]] && echo "$session_line"
+      [[ -n "$reason_line" ]] && echo "$reason_line"
+
+      if [[ -n "$session_line" && "$session_line" != *"$today_et"* ]]; then
+        echo "Info: session date is before today ($today_et). Normal outside market hours."
+      fi
+    else
+      cat "$tmp_output" >&2
+      rm -f "$tmp_output"
+      exit 1
+    fi
+    rm -f "$tmp_output"
     ;;
   opening-check)
     uv run optionctl zero-dte signal --ticker "$TICKER" --source "$SOURCE"

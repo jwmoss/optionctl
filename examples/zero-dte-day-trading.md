@@ -60,11 +60,11 @@ uv run optionctl zero-dte plan \
 3. Confirm environment works:
 
 ```bash
-uv run optionctl zero-dte signal --ticker SPY --source polygon
+./examples/zero-dte-day-trading.sh night-before
 ```
 
-Expected output: `waiting` or `no_trade` is fine here. This is a system check.
-If market is closed, the signal can reference the prior trading session date.
+Expected output: a compact summary (`System check: OK`, `ORB signal`, `Session date`, `Reason`).
+`waiting` or `no_trade` is fine here. If market is closed, prior-session date is normal.
 
 ### Premarket (08:45-09:20 ET)
 
