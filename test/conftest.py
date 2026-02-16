@@ -128,6 +128,10 @@ def make_candidate():
         days_to_earnings: int | None = None,
         vol_vs_avg: float | None = None,
         contract_symbol: str = "",
+        delta: float | None = None,
+        gamma: float | None = None,
+        theta: float | None = None,
+        vega: float | None = None,
     ) -> OptionCandidate:
         return OptionCandidate(
             ticker=ticker,
@@ -147,6 +151,10 @@ def make_candidate():
             days_to_earnings=days_to_earnings,
             vol_vs_avg=vol_vs_avg,
             contract_symbol=contract_symbol,
+            delta=delta,
+            gamma=gamma,
+            theta=theta,
+            vega=vega,
         )
 
     return _factory

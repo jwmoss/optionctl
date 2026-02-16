@@ -68,6 +68,11 @@ class OptionCandidate:
     # Enhanced signals
     days_to_earnings: int | None = None  # days until next earnings, None if unknown
     vol_vs_avg: float | None = None  # current volume vs rolling average
+    # Greeks (optional; available from some providers such as Polygon)
+    delta: float | None = None
+    gamma: float | None = None
+    theta: float | None = None
+    vega: float | None = None
 
 
 @dataclass
