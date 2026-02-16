@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, date, datetime
+from typing import TYPE_CHECKING
 
 import yfinance as yf
 
-from optionctl.filters import apply_filters, proximity_pct, volume_oi_ratio
-from optionctl.models import OptionCandidate, ScoringWeights
+from optionctl.candidates import CandidateContext, build_candidate_from_row
+from optionctl.filters import apply_filters
 from optionctl.scoring import score_candidates
+
+if TYPE_CHECKING:
+    from optionctl.models import OptionCandidate, ScoringWeights
 
 logger = logging.getLogger(__name__)
 
@@ -85,26 +89,16 @@ def find_penny_0dte(
 
     filtered = apply_filters(chain.calls, spy_price, max_price, min_volume)
     exp_date = date.fromisoformat(exp_str)
+    context = CandidateContext(expiration=exp_date, underlying_price=spy_price, dte=0)
 
     candidates: list[OptionCandidate] = []
     for _, row in filtered.iterrows():
-        candidate = OptionCandidate(
-            ticker=SPY_TICKER,
-            strike=float(row["strike"]),
-            expiration=exp_date,
-            contract_type="call",
-            bid=float(row.get("bid", 0)),
-            ask=float(row.get("_price", row["ask"])),
-            last_price=float(row.get("lastPrice", 0)),
-            volume=int(row["volume"]),
-            open_interest=int(row["openInterest"]),
-            implied_volatility=float(row.get("impliedVolatility", 0)),
-            underlying_price=spy_price,
-            dte=0,
-            volume_oi_ratio=volume_oi_ratio(int(row["volume"]), int(row["openInterest"])),
-            proximity_pct=proximity_pct(spy_price, float(row["strike"])),
-            contract_symbol=str(row.get("contractSymbol", "")),
+        candidates.append(
+            build_candidate_from_row(
+                ticker=SPY_TICKER,
+                row=row,
+                context=context,
+            )
         )
-        candidates.append(candidate)
 
     return score_candidates(candidates, weights)
