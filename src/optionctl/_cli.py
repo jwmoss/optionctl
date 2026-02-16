@@ -12,7 +12,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from optionctl.models import ScoringWeights, Side
+from optionctl.models import ScoringWeights
 
 if TYPE_CHECKING:
     from optionctl.models import OptionCandidate, ScanResult
@@ -43,11 +43,6 @@ _UNUSUAL_WEIGHTS = ScoringWeights(
 # Proximity thresholds for table color coding.
 _PROXIMITY_GOOD = 10
 _PROXIMITY_MODERATE = 20
-
-
-def _parse_side(value: str) -> Side:
-    """Convert a CLI side string to a Side enum."""
-    return Side(value)
 
 
 def _render_table(candidates: list[OptionCandidate], title: str) -> None:
@@ -249,14 +244,6 @@ def main() -> None:
     help="Minimum volume/open-interest ratio.",
 )
 @click.option(
-    "--side",
-    "side_str",
-    type=click.Choice(["calls", "puts", "both"]),
-    default="both",
-    show_default=True,
-    help="Option side to scan.",
-)
-@click.option(
     "--refresh",
     is_flag=True,
     default=False,
@@ -290,7 +277,6 @@ def scan(
     max_price: float,
     min_volume: int,
     min_vol_oi: float,
-    side_str: str,
     refresh: bool,
     output_fmt: str,
     limit: int,
@@ -301,8 +287,7 @@ def scan(
     from optionctl.universe import get_sp500_tickers
 
     tickers = get_sp500_tickers(use_cache=not refresh)
-    side = _parse_side(side_str)
-    console.print(f"Scanning {len(tickers)} S&P 500 tickers for unusual flow ({side_str})...")
+    console.print(f"Scanning {len(tickers)} S&P 500 tickers for unusual flow...")
 
     result = _run_with_progress(
         total=len(tickers),
@@ -317,7 +302,6 @@ def scan(
             min_vol_oi=min_vol_oi,
             progress_callback=on_progress,
             weights=_UNUSUAL_WEIGHTS,
-            side=side,
             use_cache=not refresh,
         ),
     )

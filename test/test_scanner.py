@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from optionctl.models import ScoringWeights, Side
+from optionctl.models import ScoringWeights
 from optionctl.scanner import _parse_expiration, scan_ticker, scan_universe
 
 
@@ -41,67 +41,6 @@ def test_scan_ticker_returns_candidates(
     assert result[0].ticker == "TEST"
     assert result[0].strike == 200.0
     assert result[0].dte == 3
-    assert result[0].contract_type == "call"
-
-
-@patch("optionctl.scanner.compute_vol_vs_avg", return_value=None)
-@patch("optionctl.scanner.record_volume_snapshot")
-@patch("optionctl.scanner.datetime")
-@patch("optionctl.scanner.yf")
-def test_scan_ticker_puts(
-    mock_yf, mock_dt, _mock_record, _mock_vol, make_calls_df, make_mock_ticker
-):
-    mock_dt.now.return_value.date.return_value = date(2026, 1, 27)
-    exp = "2026-01-30"
-    calls = make_calls_df(strikes=[200.0])
-    puts = make_calls_df(strikes=[80.0, 70.0])
-    mock_yf.Ticker.return_value = make_mock_ticker(
-        150.0, (exp,), {exp: calls}, puts_by_exp={exp: puts}
-    )
-
-    result = scan_ticker("TEST", side=Side.PUTS, use_cache=False)
-    assert len(result) == 2
-    assert all(c.contract_type == "put" for c in result)
-
-
-@patch("optionctl.scanner.compute_vol_vs_avg", return_value=None)
-@patch("optionctl.scanner.record_volume_snapshot")
-@patch("optionctl.scanner.datetime")
-@patch("optionctl.scanner.yf")
-def test_scan_ticker_both_sides(
-    mock_yf, mock_dt, _mock_record, _mock_vol, make_calls_df, make_mock_ticker
-):
-    mock_dt.now.return_value.date.return_value = date(2026, 1, 27)
-    exp = "2026-01-30"
-    calls = make_calls_df(strikes=[200.0])
-    puts = make_calls_df(strikes=[80.0])
-    mock_yf.Ticker.return_value = make_mock_ticker(
-        150.0, (exp,), {exp: calls}, puts_by_exp={exp: puts}
-    )
-
-    result = scan_ticker("TEST", side=Side.BOTH, use_cache=False)
-    types = {c.contract_type for c in result}
-    assert "call" in types
-    assert "put" in types
-
-
-@patch("optionctl.scanner.compute_vol_vs_avg", return_value=None)
-@patch("optionctl.scanner.record_volume_snapshot")
-@patch("optionctl.scanner.datetime")
-@patch("optionctl.scanner.yf")
-def test_scan_ticker_default_is_calls(
-    mock_yf, mock_dt, _mock_record, _mock_vol, make_calls_df, make_mock_ticker
-):
-    mock_dt.now.return_value.date.return_value = date(2026, 1, 27)
-    exp = "2026-01-30"
-    calls = make_calls_df(strikes=[200.0])
-    puts = make_calls_df(strikes=[80.0])
-    mock_yf.Ticker.return_value = make_mock_ticker(
-        150.0, (exp,), {exp: calls}, puts_by_exp={exp: puts}
-    )
-
-    result = scan_ticker("TEST", use_cache=False)
-    assert all(c.contract_type == "call" for c in result)
 
 
 @patch("optionctl.scanner.compute_vol_vs_avg", return_value=None)
@@ -237,15 +176,6 @@ def test_scan_universe_with_custom_weights(mock_scan, _mock_record):
     result = scan_universe(["X"], weights=weights)
     assert result.tickers_scanned == 1
     assert result.candidates == []
-
-
-@patch("optionctl.scanner.record_volume_snapshot")
-@patch("optionctl.scanner.scan_ticker")
-def test_scan_universe_threads_side(mock_scan, _mock_record):
-    mock_scan.return_value = []
-    scan_universe(["X"], side=Side.PUTS)
-    _, kwargs = mock_scan.call_args
-    assert kwargs["side"] == Side.PUTS
 
 
 @patch("optionctl.scanner.record_volume_snapshot")

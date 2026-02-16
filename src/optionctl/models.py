@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import StrEnum
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
@@ -15,14 +14,6 @@ DEFAULT_WEIGHT_VOLUME = 15.0
 DEFAULT_WEIGHT_PROXIMITY = 25.0
 DEFAULT_WEIGHT_IV = 20.0
 DEFAULT_WEIGHT_EARNINGS = 15.0
-
-
-class Side(StrEnum):
-    """Which option side(s) to scan."""
-
-    CALLS = "calls"
-    PUTS = "puts"
-    BOTH = "both"
 
 
 @runtime_checkable
@@ -52,7 +43,6 @@ class OptionCandidate:
     ticker: str
     strike: float
     expiration: date
-    contract_type: str
     bid: float
     ask: float
     last_price: float

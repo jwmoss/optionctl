@@ -28,7 +28,6 @@ def build_candidate_from_row(
     ticker: str,
     row: Mapping[str, object],
     context: CandidateContext,
-    contract_type: str = "call",
 ) -> OptionCandidate:
     """Build an ``OptionCandidate`` from a filtered option-row record."""
     volume = int(cast("int | float | str", row["volume"]))
@@ -50,7 +49,6 @@ def build_candidate_from_row(
         ticker=ticker,
         strike=strike,
         expiration=context.expiration,
-        contract_type=contract_type,
         bid=float(cast("int | float | str", row.get("bid", 0))),
         ask=float(cast("int | float | str", ask_value)),
         last_price=float(cast("int | float | str", row.get("lastPrice", 0))),

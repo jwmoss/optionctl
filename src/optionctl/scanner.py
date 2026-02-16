@@ -16,7 +16,7 @@ from optionctl.cache import read_chain_cache, write_chain_cache, write_no_option
 from optionctl.candidates import CandidateContext, build_candidate_from_row
 from optionctl.filters import apply_filters
 from optionctl.history import compute_vol_vs_avg, record_volume_snapshot
-from optionctl.models import ScanResult, Side
+from optionctl.models import ScanResult
 from optionctl.scoring import score_candidates
 
 if TYPE_CHECKING:
@@ -307,25 +307,6 @@ def _get_ticker_data(
     return _fetch_and_cache_ticker(ticker, fetch_enhanced=fetch_enhanced)
 
 
-def _sides_to_scan(side: Side) -> list[str]:
-    """Return the list of side keys to iterate over.
-
-    Args:
-        side: Which option side(s) to scan.
-
-    Returns:
-        List of side keys ("calls", "puts", or both).
-    """
-    if side == Side.CALLS:
-        return ["calls"]
-    if side == Side.PUTS:
-        return ["puts"]
-    return ["calls", "puts"]
-
-
-_SIDE_TO_CONTRACT_TYPE = {"calls": "call", "puts": "put"}
-
-
 def scan_ticker(
     ticker: str,
     min_dte: int = 0,
@@ -334,7 +315,6 @@ def scan_ticker(
     min_volume: int = 100,
     min_vol_oi: float = 0.0,
     *,
-    side: Side = Side.CALLS,
     fetch_enhanced: bool = True,
     use_cache: bool = True,
     source: OptionDataSource | None = None,
@@ -348,7 +328,6 @@ def scan_ticker(
         max_price: Maximum ask price (default $0.01).
         min_volume: Minimum contract volume.
         min_vol_oi: Minimum volume/open-interest ratio.
-        side: Which option side(s) to scan.
         fetch_enhanced: Whether to fetch enhanced signals (earnings, etc.).
         use_cache: Whether to use disk cache for results.
         source: Optional data source; uses built-in yfinance fetcher if None.
@@ -366,7 +345,6 @@ def scan_ticker(
     candidates: list[OptionCandidate] = []
     underlying_price = data["underlying_price"]
     days_to_earnings = data.get("days_to_earnings")
-    scan_sides = _sides_to_scan(side)
 
     for exp_str, chain_data in data["chains"].items():
         exp_date = _parse_expiration(exp_str)
@@ -382,30 +360,26 @@ def scan_ticker(
             days_to_earnings=days_to_earnings,
         )
 
-        for side_key in scan_sides:
-            chain_records = chain_data.get(side_key, [])
-            contract_type = _SIDE_TO_CONTRACT_TYPE[side_key]
+        chain_records = chain_data.get("calls", [])
+        df = pd.DataFrame(chain_records)
+        if df.empty:
+            continue
 
-            df = pd.DataFrame(chain_records)
-            if df.empty:
-                continue
-
-            filtered = apply_filters(
-                df,
-                underlying_price,
-                max_price,
-                min_volume,
-                min_vol_oi,
+        filtered = apply_filters(
+            df,
+            underlying_price,
+            max_price,
+            min_volume,
+            min_vol_oi,
+        )
+        candidates.extend(
+            build_candidate_from_row(
+                ticker=ticker,
+                row=row,
+                context=context,
             )
-            candidates.extend(
-                build_candidate_from_row(
-                    ticker=ticker,
-                    row=row,
-                    context=context,
-                    contract_type=contract_type,
-                )
-                for row in filtered.to_dict(orient="records")
-            )
+            for row in filtered.to_dict(orient="records")
+        )
 
     for c in candidates:
         c.vol_vs_avg = compute_vol_vs_avg(c.volume, c.contract_symbol)
@@ -423,7 +397,6 @@ def scan_universe(
     progress_callback: Callable[[str, int, int], None] | None = None,
     weights: ScoringWeights | None = None,
     *,
-    side: Side = Side.CALLS,
     fetch_enhanced: bool = True,
     use_cache: bool = True,
     source: OptionDataSource | None = None,
@@ -439,7 +412,6 @@ def scan_universe(
         min_vol_oi: Minimum volume/open-interest ratio.
         progress_callback: Optional callback(ticker, current, total) for progress.
         weights: Optional custom scoring weights.
-        side: Which option side(s) to scan.
         fetch_enhanced: Whether to fetch enhanced signals.
         use_cache: Whether to use disk cache for results.
         source: Optional data source; uses built-in yfinance fetcher if None.
@@ -458,7 +430,6 @@ def scan_universe(
             max_price=max_price,
             min_volume=min_volume,
             min_vol_oi=min_vol_oi,
-            side=side,
             fetch_enhanced=fetch_enhanced,
             use_cache=use_cache,
             source=source,
