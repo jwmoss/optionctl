@@ -1,6 +1,6 @@
 # optionctl
 
-A Python CLI tool to find stock options on high-volume stocks priced at $0.01 with potential to increase to $0.02 or higher. Also supports SPY 0DTE scanning.
+A Python CLI tool to find stock options on high-volume stocks priced at $0.01 with potential to increase to $0.02 or higher.
 
 ## Strategy
 
@@ -10,12 +10,6 @@ A Python CLI tool to find stock options on high-volume stocks priced at $0.01 wi
 - The edge comes from finding contracts with **unusual volume/OI ratios** (signals smart money), **proximity to strike** (closer = more likely to double), and **IV spikes** (catalyst expected)
 - A 100% return ($0.01 -> $0.02) requires a relatively small move in the underlying
 - Key risk: vast majority expire worthless -- this is a numbers game
-
-### SPY 0DTE
-
-- SPY has M/W/F expirations with massive liquidity
-- **Penny hunting**: far OTM $0.01 calls for lottery plays
-- Best windows: 9:30-10:30 AM ET and 3:30-4:00 PM ET
 
 ### Filtering Criteria
 
@@ -52,7 +46,6 @@ src/optionctl/
 ├── filters.py           # Volume/OI, proximity, IV filters
 ├── scoring.py           # Composite scoring of candidates
 ├── universe.py          # Stock universe providers (S&P500, top volume, watchlist)
-├── spy.py               # SPY 0DTE specific logic
 └── models.py            # Data models (dataclasses)
 ```
 
@@ -89,12 +82,6 @@ uv run optionctl scan --universe volume        # Scan top stocks by volume
 uv run optionctl scan --universe watchlist --watchlist-file tickers.txt
 uv run optionctl scan --min-dte 0 --max-dte 5  # Same-week expiration only
 uv run optionctl scan --output json            # Output as JSON
-```
-
-### SPY 0DTE
-
-```bash
-uv run optionctl spy penny                     # Find SPY 0DTE penny calls ($0.01)
 ```
 
 ### Cache Management
@@ -146,7 +133,6 @@ uv run optionctl scan --w-vol-oi 10 --w-volume 10 --w-proximity 60 --w-iv 20  # 
 See the [examples/](examples/) directory for detailed walkthroughs:
 
 - **[High-Conviction Volume Scan](examples/high-conviction-volume.md)** -- Find penny options with the most raw trading activity using pure volume scoring
-- **[SPY 0DTE Penny Hunting](examples/spy-0dte-penny.md)** -- Find $0.01 SPY calls expiring today for lottery plays
 - **[Custom Watchlist](examples/custom-watchlist.md)** -- Scan a specific set of tickers, including pre-earnings plays
 - **[General Usage](examples/usage.md)** -- Full reference for all commands, flags, output formats, and `jq` recipes
 

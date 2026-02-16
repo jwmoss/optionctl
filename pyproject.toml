@@ -109,9 +109,6 @@ max-positional-args = 5
     "BLE001",  # yfinance raises unpredictable exceptions
     "PLR0913",  # scan functions need many filter params
 ]
-"src/optionctl/spy.py" = [
-    "BLE001",  # yfinance raises unpredictable exceptions
-]
 "test/**/*.py" = [
     "ANN",   # no type annotations in tests
     "D",     # no docstrings in tests

@@ -286,7 +286,7 @@ _W_EARNINGS_OPTION = click.option(
 @click.group()
 @click.version_option(package_name="optionctl")
 def main() -> None:
-    """Penny options scanner for high-volume stocks and SPY 0DTE."""
+    """Penny options scanner for high-volume stocks."""
 
 
 @main.command()
@@ -361,44 +361,6 @@ def scan(
     _render(
         result.candidates, output_fmt, "Penny Option Candidates", limit=0 if show_all else limit
     )
-
-
-@main.group()
-def spy() -> None:
-    """SPY 0DTE options scanner."""
-
-
-@spy.command()
-@click.option("--max-price", type=float, default=0.01, help="Maximum ask price.")
-@click.option("--min-volume", type=int, default=100, help="Minimum contract volume.")
-@_apply_click_options(
-    _OUTPUT_OPTION,
-    _W_VOL_OI_OPTION,
-    _W_VOLUME_OPTION,
-    _W_PROXIMITY_OPTION,
-    _W_IV_OPTION,
-    _LIMIT_OPTION,
-    _ALL_OPTION,
-)
-def penny(
-    max_price: float,
-    min_volume: int,
-    output_fmt: str,
-    w_vol_oi: float,
-    w_volume: float,
-    w_proximity: float,
-    w_iv: float,
-    limit: int,
-    show_all: bool,
-) -> None:
-    """Find SPY 0DTE penny call options."""
-    from optionctl.spy import find_penny_0dte
-
-    weights = _make_weights(w_vol_oi, w_volume, w_proximity, w_iv, w_earnings=0)
-    console.print("Scanning SPY 0DTE for penny calls...")
-    candidates = find_penny_0dte(max_price, min_volume, weights)
-    console.print(f"Found {len(candidates)} candidates")
-    _render(candidates, output_fmt, "SPY 0DTE Penny Calls", limit=0 if show_all else limit)
 
 
 @main.command()
