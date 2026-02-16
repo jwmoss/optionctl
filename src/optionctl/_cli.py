@@ -21,7 +21,7 @@ from optionctl.models import (
 )
 
 if TYPE_CHECKING:
-    from optionctl.models import OptionCandidate, ScanResult, ScoringWeights
+    from optionctl.models import OptionCandidate, OptionDataSource, ScanResult, ScoringWeights, Side
 
 console = Console(stderr=True)
 
@@ -41,12 +41,39 @@ def _apply_click_options(*options: _ClickDecorator) -> _ClickDecorator:
     return _decorator
 
 
+def _parse_side(value: str) -> Side:
+    """Convert a CLI side string to a Side enum."""
+    from optionctl.models import Side
+
+    return Side(value)
+
+
+def _build_source(name: str) -> OptionDataSource:
+    """Build the appropriate data source from a CLI string.
+
+    Args:
+        name: Source name ("yfinance" or "polygon").
+
+    Returns:
+        An OptionDataSource instance.
+    """
+    if name == "polygon":
+        from optionctl.polygon import PolygonSource
+
+        return PolygonSource()
+
+    from optionctl.yfinance_source import YFinanceSource
+
+    return YFinanceSource()
+
+
 def _make_weights(
     w_vol_oi: float,
     w_volume: float,
     w_proximity: float,
     w_iv: float,
     w_earnings: float = DEFAULT_WEIGHT_EARNINGS,
+    w_vol_vs_avg: float = 0.0,
 ) -> ScoringWeights:
     """Build a ScoringWeights from CLI flag values."""
     from optionctl.models import ScoringWeights
@@ -57,6 +84,7 @@ def _make_weights(
         proximity=w_proximity,
         iv=w_iv,
         earnings=w_earnings,
+        vol_vs_avg=w_vol_vs_avg,
     )
 
 
@@ -64,18 +92,22 @@ def _render_table(candidates: list[OptionCandidate], title: str) -> None:
     """Render candidates as a rich table."""
     table = Table(title=title, show_lines=False)
     table.add_column("Ticker", style="cyan")
+    table.add_column("C/P", justify="center")
     table.add_column("Strike", justify="right")
     table.add_column("Exp", style="green")
     table.add_column("Ask", justify="right", style="yellow")
     table.add_column("Vol", justify="right")
     table.add_column("OI", justify="right")
     table.add_column("Vol/OI", justify="right", style="magenta")
+    table.add_column("Vol/Avg", justify="right")
     table.add_column("IV", justify="right")
     table.add_column("Dist%", justify="right")
     table.add_column("Earn", justify="right", style="yellow")
     table.add_column("Score", justify="right", style="bold green")
 
     for c in candidates:
+        cp_str = "[green]C[/green]" if c.contract_type == "call" else "[red]P[/red]"
+
         # Format earnings display
         if c.days_to_earnings is not None:
             if 0 <= c.days_to_earnings <= c.dte:
@@ -93,14 +125,19 @@ def _render_table(candidates: list[OptionCandidate], title: str) -> None:
         else:
             dist_str = f"[red]{c.proximity_pct:.1f}%[/red]"
 
+        # Format vol/avg
+        vol_avg_str = f"{c.vol_vs_avg:.1f}x" if c.vol_vs_avg is not None else "-"
+
         table.add_row(
             c.ticker,
+            cp_str,
             f"{c.strike:.2f}",
             c.expiration.isoformat(),
             f"{c.ask:.2f}",
             f"{c.volume:,}",
             f"{c.open_interest:,}",
             f"{c.volume_oi_ratio:.1f}",
+            vol_avg_str,
             f"{c.implied_volatility:.0%}",
             dist_str,
             earn_str,
@@ -124,6 +161,7 @@ def _render_json(candidates: list[OptionCandidate]) -> None:
     data = [
         {
             "ticker": c.ticker,
+            "contract_type": c.contract_type,
             "strike": c.strike,
             "expiration": c.expiration.isoformat(),
             "ask": c.ask,
@@ -131,6 +169,7 @@ def _render_json(candidates: list[OptionCandidate]) -> None:
             "volume": c.volume,
             "open_interest": c.open_interest,
             "volume_oi_ratio": round(c.volume_oi_ratio, 2),
+            "vol_vs_avg": round(c.vol_vs_avg, 1) if c.vol_vs_avg is not None else None,
             "implied_volatility": round(c.implied_volatility, 4),
             "proximity_pct": round(c.proximity_pct, 2),
             "days_to_earnings": c.days_to_earnings,
@@ -149,6 +188,7 @@ def _render_csv(candidates: list[OptionCandidate]) -> None:
     writer.writerow(
         [
             "ticker",
+            "contract_type",
             "strike",
             "expiration",
             "ask",
@@ -156,6 +196,7 @@ def _render_csv(candidates: list[OptionCandidate]) -> None:
             "volume",
             "open_interest",
             "volume_oi_ratio",
+            "vol_vs_avg",
             "implied_volatility",
             "proximity_pct",
             "days_to_earnings",
@@ -168,6 +209,7 @@ def _render_csv(candidates: list[OptionCandidate]) -> None:
         writer.writerow(
             [
                 c.ticker,
+                c.contract_type,
                 c.strike,
                 c.expiration.isoformat(),
                 c.ask,
@@ -175,6 +217,7 @@ def _render_csv(candidates: list[OptionCandidate]) -> None:
                 c.volume,
                 c.open_interest,
                 round(c.volume_oi_ratio, 2),
+                round(c.vol_vs_avg, 1) if c.vol_vs_avg is not None else "",
                 round(c.implied_volatility, 4),
                 round(c.proximity_pct, 2),
                 c.days_to_earnings if c.days_to_earnings is not None else "",
@@ -281,6 +324,25 @@ _W_EARNINGS_OPTION = click.option(
     default=DEFAULT_WEIGHT_EARNINGS,
     help="Scoring weight: earnings catalyst.",
 )
+_W_VOL_AVG_OPTION = click.option(
+    "--w-vol-avg",
+    type=float,
+    default=0.0,
+    help="Scoring weight: vol vs avg baseline.",
+)
+_SIDE_OPTION = click.option(
+    "--side",
+    "side_str",
+    type=click.Choice(["calls", "puts", "both"]),
+    default="calls",
+    help="Option side to scan.",
+)
+_SOURCE_OPTION = click.option(
+    "--source",
+    type=click.Choice(["yfinance", "polygon"]),
+    default="yfinance",
+    help="Data source for option chains.",
+)
 
 
 @click.group()
@@ -306,12 +368,15 @@ def main() -> None:
     "--refresh", is_flag=True, default=False, help="Bypass ticker cache and fetch fresh data."
 )
 @_apply_click_options(
+    _SIDE_OPTION,
+    _SOURCE_OPTION,
     _OUTPUT_OPTION,
     _W_VOL_OI_OPTION,
     _W_VOLUME_OPTION,
     _W_PROXIMITY_OPTION,
     _W_IV_OPTION,
     _W_EARNINGS_OPTION,
+    _W_VOL_AVG_OPTION,
     _LIMIT_OPTION,
     _ALL_OPTION,
 )
@@ -323,23 +388,28 @@ def scan(
     max_dte: int,
     max_price: float,
     min_volume: int,
+    refresh: bool,
+    side_str: str,
+    source: str,
     output_fmt: str,
     w_vol_oi: float,
     w_volume: float,
     w_proximity: float,
     w_iv: float,
     w_earnings: float,
-    refresh: bool,
+    w_vol_avg: float,
     limit: int,
     show_all: bool,
 ) -> None:
-    """Scan for penny OTM call options across a stock universe."""
+    """Scan for penny OTM options across a stock universe."""
     from optionctl.scanner import scan_universe
     from optionctl.universe import get_tickers
 
-    weights = _make_weights(w_vol_oi, w_volume, w_proximity, w_iv, w_earnings)
+    side = _parse_side(side_str)
+    weights = _make_weights(w_vol_oi, w_volume, w_proximity, w_iv, w_earnings, w_vol_avg)
+    data_source = _build_source(source)
     tickers = get_tickers(universe, watchlist_file, top_n, use_cache=not refresh)
-    console.print(f"Scanning {len(tickers)} tickers ({universe})...")
+    console.print(f"Scanning {len(tickers)} tickers ({universe}, {side_str})...")
 
     result = _run_with_progress(
         total=len(tickers),
@@ -353,7 +423,9 @@ def scan(
             min_volume,
             progress_callback=on_progress,
             weights=weights,
+            side=side,
             use_cache=not refresh,
+            source=data_source,
         ),
     )
     _print_scan_summary(result)
@@ -455,12 +527,14 @@ def cache() -> None:
     default=False,
     help="Cache all expirations (not just 2 weeks).",
 )
-def warm(universe: str, *, fetch_all: bool) -> None:
+@_apply_click_options(_SOURCE_OPTION)
+def warm(universe: str, fetch_all: bool, source: str) -> None:
     """Pre-fetch and cache option chains for a universe."""
     from optionctl.scanner import warm_cache
     from optionctl.universe import get_sp500_tickers, get_top_volume_tickers
 
     tickers = get_sp500_tickers() if universe == "sp500" else get_top_volume_tickers(50)
+    data_source = _build_source(source)
 
     console.print(f"Warming cache for {len(tickers)} tickers...")
 
@@ -472,6 +546,7 @@ def warm(universe: str, *, fetch_all: bool) -> None:
             tickers,
             progress_callback=on_progress,
             max_dte=0 if fetch_all else 14,
+            source=data_source,
         ),
     )
 
@@ -497,3 +572,13 @@ def status() -> None:
     console.print(f"Cache size: {stats['size_mb']} MB")
     if stats["count"] > 0 and stats["count"] <= 20:  # noqa: PLR2004
         console.print(f"Tickers: {', '.join(stats['tickers'])}")
+
+
+@cache.command("prune-history")
+@click.option("--max-age", type=int, default=30, help="Delete history files older than N days.")
+def prune_history(max_age: int) -> None:
+    """Remove old volume history files."""
+    from optionctl.history import cleanup_old_history
+
+    removed = cleanup_old_history(max_age_days=max_age)
+    console.print(f"Removed {removed} old history files")

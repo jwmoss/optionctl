@@ -14,6 +14,7 @@ from optionctl.scoring import (
     score_earnings,
     score_iv,
     score_proximity,
+    score_vol_vs_avg,
     score_volume,
     score_volume_oi,
 )
@@ -100,6 +101,27 @@ def test_score_earnings(days_to_earn, dte, weight, expected):
 
 
 # ---------------------------------------------------------------------------
+# score_vol_vs_avg — parametrized
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("vol_vs_avg", "weight", "expected"),
+    [
+        (10.0, 20.0, 20.0),
+        (20.0, 20.0, 20.0),
+        (5.0, 20.0, 10.0),
+        (0.0, 20.0, 0.0),
+        (None, 20.0, 0.0),
+        (5.0, 0.0, 0.0),
+    ],
+    ids=["max", "above-max", "half", "zero", "none", "weight-disabled"],
+)
+def test_score_vol_vs_avg(vol_vs_avg, weight, expected):
+    assert score_vol_vs_avg(vol_vs_avg, weight=weight) == expected
+
+
+# ---------------------------------------------------------------------------
 # compute_score
 # ---------------------------------------------------------------------------
 
@@ -131,6 +153,21 @@ def test_compute_score(vol_oi, volume, prox, iv, earn, dte, weights, expected):
         weights=weights,
     )
     assert score == expected
+
+
+def test_compute_score_with_vol_vs_avg():
+    weights = ScoringWeights(
+        vol_oi=0.0, volume=0.0, proximity=0.0, iv=0.0, earnings=0.0, vol_vs_avg=100.0
+    )
+    score = compute_score(
+        vol_oi_ratio=0.0,
+        volume=0,
+        proximity_pct=20.0,
+        implied_volatility=0.0,
+        vol_vs_avg=5.0,
+        weights=weights,
+    )
+    assert score == 50.0
 
 
 # ---------------------------------------------------------------------------

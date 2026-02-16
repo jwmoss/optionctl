@@ -29,6 +29,7 @@ def build_candidate_from_row(
     ticker: str,
     row: pd.Series,
     context: CandidateContext,
+    contract_type: str = "call",
 ) -> OptionCandidate:
     """Build an ``OptionCandidate`` from a filtered option-row record."""
     volume = int(row["volume"])
@@ -38,7 +39,7 @@ def build_candidate_from_row(
         ticker=ticker,
         strike=strike,
         expiration=context.expiration,
-        contract_type="call",
+        contract_type=contract_type,
         bid=float(row.get("bid", 0)),
         ask=float(row.get("_price", row["ask"])),
         last_price=float(row.get("lastPrice", 0)),

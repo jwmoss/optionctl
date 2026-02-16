@@ -86,13 +86,16 @@ def make_mock_ticker():
         underlying_price: float,
         expirations: tuple[str, ...],
         calls_by_exp: dict[str, pd.DataFrame],
+        puts_by_exp: dict[str, pd.DataFrame] | None = None,
     ) -> MagicMock:
         mock = MagicMock()
         mock.options = expirations
         mock.fast_info.last_price = underlying_price
 
         def option_chain(exp: str) -> OptionChain:
-            return OptionChain(calls=calls_by_exp[exp], puts=pd.DataFrame())
+            calls = calls_by_exp[exp]
+            puts = puts_by_exp[exp] if puts_by_exp and exp in puts_by_exp else pd.DataFrame()
+            return OptionChain(calls=calls, puts=puts)
 
         mock.option_chain = option_chain
         return mock
@@ -113,6 +116,7 @@ def make_candidate():
         ticker: str = "TEST",
         strike: float = 100.0,
         expiration: date = date(2026, 1, 30),
+        contract_type: str = "call",
         volume: int = 500,
         open_interest: int = 100,
         implied_volatility: float = 0.5,
@@ -122,12 +126,14 @@ def make_candidate():
         proximity_pct: float = 25.0,
         ask: float = 0.01,
         days_to_earnings: int | None = None,
+        vol_vs_avg: float | None = None,
+        contract_symbol: str = "",
     ) -> OptionCandidate:
         return OptionCandidate(
             ticker=ticker,
             strike=strike,
             expiration=expiration,
-            contract_type="call",
+            contract_type=contract_type,
             bid=0.0,
             ask=ask,
             last_price=ask,
@@ -139,6 +145,8 @@ def make_candidate():
             volume_oi_ratio=volume_oi_ratio,
             proximity_pct=proximity_pct,
             days_to_earnings=days_to_earnings,
+            vol_vs_avg=vol_vs_avg,
+            contract_symbol=contract_symbol,
         )
 
     return _factory
@@ -186,5 +194,54 @@ def watchlist_file(tmp_path):
         p = tmp_path / "tickers.txt"
         p.write_text(content)
         return str(p)
+
+    return _factory
+
+
+# ---------------------------------------------------------------------------
+# History directory fixture
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def history_dir(tmp_path, monkeypatch):
+    """Use a temporary directory for history tests."""
+    test_dir = tmp_path / "history"
+    monkeypatch.setattr("optionctl.history._HISTORY_DIR", test_dir)
+    return test_dir
+
+
+# ---------------------------------------------------------------------------
+# Polygon mock fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mock_polygon_response():
+    """Factory for Polygon API snapshot responses."""
+
+    def _factory(
+        ticker: str = "TEST",
+        underlying_price: float = 150.0,
+        contracts: list[dict] | None = None,
+    ) -> dict:
+        if contracts is None:
+            contracts = [
+                {
+                    "details": {
+                        "ticker": f"O:{ticker}260130C00200000",
+                        "contract_type": "call",
+                        "strike_price": 200.0,
+                        "expiration_date": "2026-01-30",
+                    },
+                    "day": {"volume": 500, "close": 0.01, "open": 0.01},
+                    "open_interest": 100,
+                    "implied_volatility": 0.5,
+                    "last_quote": {"bid": 0.0, "ask": 0.01},
+                    "underlying_asset": {"price": underlying_price},
+                    "greeks": {"delta": 0.05},
+                },
+            ]
+        return {"results": contracts, "status": "OK"}
 
     return _factory
