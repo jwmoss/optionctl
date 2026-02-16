@@ -2,26 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, NamedTuple
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
 from optionctl.models import ScoringWeights
-from optionctl.spy import (
-    _get_spy_0dte_expiration,
-    _get_spy_price,
-    find_penny_0dte,
-)
-
-if TYPE_CHECKING:
-    import pandas as pd
-
-
-class OptionChain(NamedTuple):
-    calls: pd.DataFrame
-    puts: pd.DataFrame
-
+from optionctl.spy import _get_spy_0dte_expiration, _get_spy_price, find_penny_0dte
 
 # ---------------------------------------------------------------------------
 # _get_spy_0dte_expiration — parametrized
@@ -96,8 +83,9 @@ def test_find_penny_0dte_scenarios(
     _mock_exp, _mock_price, mock_yf, strikes, asks, volumes, ois, expected_count, make_calls_df
 ):
     calls = make_calls_df(strikes=strikes, asks=asks, volumes=volumes, open_interests=ois)
-    mock_yf.Ticker.return_value.option_chain.return_value = OptionChain(
-        calls=calls, puts=make_calls_df(strikes=[])
+    mock_yf.Ticker.return_value.option_chain.return_value = SimpleNamespace(
+        calls=calls,
+        puts=make_calls_df(strikes=[]),
     )
     result = find_penny_0dte(max_price=0.01, min_volume=100)
     assert len(result) == expected_count
@@ -118,8 +106,9 @@ def test_find_penny_0dte_chain_error(_mock_exp, _mock_price, mock_yf):
 @patch("optionctl.spy._get_spy_0dte_expiration", return_value="2026-01-27")
 def test_find_penny_0dte_custom_weights(_mock_exp, _mock_price, mock_yf, make_calls_df):
     calls = make_calls_df(strikes=[620.0])
-    mock_yf.Ticker.return_value.option_chain.return_value = OptionChain(
-        calls=calls, puts=make_calls_df(strikes=[])
+    mock_yf.Ticker.return_value.option_chain.return_value = SimpleNamespace(
+        calls=calls,
+        puts=make_calls_df(strikes=[]),
     )
     weights = ScoringWeights(vol_oi=0, volume=100, proximity=0, iv=0)
     assert len(find_penny_0dte(weights=weights)) == 1

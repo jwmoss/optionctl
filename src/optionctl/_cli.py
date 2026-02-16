@@ -5,16 +5,40 @@ from __future__ import annotations
 import csv
 import json
 import sys
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING, TypeVar
 
 import click
 from rich.console import Console
 from rich.table import Table
 
+from optionctl.models import (
+    DEFAULT_WEIGHT_EARNINGS,
+    DEFAULT_WEIGHT_IV,
+    DEFAULT_WEIGHT_PROXIMITY,
+    DEFAULT_WEIGHT_VOL_OI,
+    DEFAULT_WEIGHT_VOLUME,
+)
+
 if TYPE_CHECKING:
-    from optionctl.models import OptionCandidate, ScoringWeights
+    from optionctl.models import OptionCandidate, ScanResult, ScoringWeights
 
 console = Console(stderr=True)
+
+_T = TypeVar("_T")
+_ProgressCallback = Callable[[str, int, int], None]
+_ClickDecorator = Callable[[Callable[..., object]], Callable[..., object]]
+
+
+def _apply_click_options(*options: _ClickDecorator) -> _ClickDecorator:
+    """Apply click options in declaration order."""
+
+    def _decorator(func: Callable[..., object]) -> Callable[..., object]:
+        for option in reversed(options):
+            func = option(func)
+        return func
+
+    return _decorator
 
 
 def _make_weights(
@@ -22,7 +46,7 @@ def _make_weights(
     w_volume: float,
     w_proximity: float,
     w_iv: float,
-    w_earnings: float = 15.0,
+    w_earnings: float = DEFAULT_WEIGHT_EARNINGS,
 ) -> ScoringWeights:
     """Build a ScoringWeights from CLI flag values."""
     from optionctl.models import ScoringWeights
@@ -84,6 +108,15 @@ def _render_table(candidates: list[OptionCandidate], title: str) -> None:
         )
 
     console.print(table)
+
+
+def _print_scan_summary(result: ScanResult) -> None:
+    """Print a standard scan summary line."""
+    console.print(
+        f"Scanned {result.tickers_scanned} tickers, "
+        f"{result.tickers_with_options} had options, "
+        f"found {len(result.candidates)} candidates",
+    )
 
 
 def _render_json(candidates: list[OptionCandidate]) -> None:
@@ -184,6 +217,72 @@ def _render(
         console.print(f"Showing {limit} of {total} candidates (use --all to see all)")
 
 
+def _run_with_progress(
+    *,
+    total: int,
+    task_label: str,
+    description_prefix: str,
+    runner: Callable[[_ProgressCallback], _T],
+) -> _T:
+    """Run a ticker-processing function with a shared progress bar."""
+    from rich.progress import Progress
+
+    with Progress(console=console) as progress:
+        task = progress.add_task(task_label, total=total)
+
+        def _on_progress(ticker: str, current: int, _total: int) -> None:
+            progress.update(
+                task, completed=current, description=f"{description_prefix} {ticker}..."
+            )
+
+        return runner(_on_progress)
+
+
+_OUTPUT_OPTION = click.option(
+    "--output",
+    "output_fmt",
+    type=click.Choice(["table", "json", "csv"]),
+    default="table",
+    help="Output format.",
+)
+_LIMIT_OPTION = click.option(
+    "--limit", type=int, default=_DEFAULT_LIMIT, help="Max candidates to display."
+)
+_ALL_OPTION = click.option(
+    "--all", "show_all", is_flag=True, default=False, help="Show all candidates."
+)
+_W_VOL_OI_OPTION = click.option(
+    "--w-vol-oi",
+    type=float,
+    default=DEFAULT_WEIGHT_VOL_OI,
+    help="Scoring weight: volume/OI ratio.",
+)
+_W_VOLUME_OPTION = click.option(
+    "--w-volume",
+    type=float,
+    default=DEFAULT_WEIGHT_VOLUME,
+    help="Scoring weight: raw volume.",
+)
+_W_PROXIMITY_OPTION = click.option(
+    "--w-proximity",
+    type=float,
+    default=DEFAULT_WEIGHT_PROXIMITY,
+    help="Scoring weight: strike proximity.",
+)
+_W_IV_OPTION = click.option(
+    "--w-iv",
+    type=float,
+    default=DEFAULT_WEIGHT_IV,
+    help="Scoring weight: implied volatility.",
+)
+_W_EARNINGS_OPTION = click.option(
+    "--w-earnings",
+    type=float,
+    default=DEFAULT_WEIGHT_EARNINGS,
+    help="Scoring weight: earnings catalyst.",
+)
+
+
 @click.group()
 @click.version_option(package_name="optionctl")
 def main() -> None:
@@ -204,22 +303,18 @@ def main() -> None:
 @click.option("--max-price", type=float, default=0.01, help="Maximum ask price.")
 @click.option("--min-volume", type=int, default=100, help="Minimum contract volume.")
 @click.option(
-    "--output",
-    "output_fmt",
-    type=click.Choice(["table", "json", "csv"]),
-    default="table",
-    help="Output format.",
-)
-@click.option("--w-vol-oi", type=float, default=25.0, help="Scoring weight: volume/OI ratio.")
-@click.option("--w-volume", type=float, default=15.0, help="Scoring weight: raw volume.")
-@click.option("--w-proximity", type=float, default=25.0, help="Scoring weight: strike proximity.")
-@click.option("--w-iv", type=float, default=20.0, help="Scoring weight: implied volatility.")
-@click.option("--w-earnings", type=float, default=15.0, help="Scoring weight: earnings catalyst.")
-@click.option(
     "--refresh", is_flag=True, default=False, help="Bypass ticker cache and fetch fresh data."
 )
-@click.option("--limit", type=int, default=_DEFAULT_LIMIT, help="Max candidates to display.")
-@click.option("--all", "show_all", is_flag=True, default=False, help="Show all candidates.")
+@_apply_click_options(
+    _OUTPUT_OPTION,
+    _W_VOL_OI_OPTION,
+    _W_VOLUME_OPTION,
+    _W_PROXIMITY_OPTION,
+    _W_IV_OPTION,
+    _W_EARNINGS_OPTION,
+    _LIMIT_OPTION,
+    _ALL_OPTION,
+)
 def scan(
     universe: str,
     watchlist_file: str | None,
@@ -239,8 +334,6 @@ def scan(
     show_all: bool,
 ) -> None:
     """Scan for penny OTM call options across a stock universe."""
-    from rich.progress import Progress
-
     from optionctl.scanner import scan_universe
     from optionctl.universe import get_tickers
 
@@ -248,13 +341,11 @@ def scan(
     tickers = get_tickers(universe, watchlist_file, top_n, use_cache=not refresh)
     console.print(f"Scanning {len(tickers)} tickers ({universe})...")
 
-    with Progress(console=console) as progress:
-        task = progress.add_task("Scanning...", total=len(tickers))
-
-        def on_progress(ticker: str, current: int, total: int) -> None:
-            progress.update(task, completed=current, description=f"Scanning {ticker}...")
-
-        result = scan_universe(
+    result = _run_with_progress(
+        total=len(tickers),
+        task_label="Scanning...",
+        description_prefix="Scanning",
+        runner=lambda on_progress: scan_universe(
             tickers,
             min_dte,
             max_dte,
@@ -263,13 +354,9 @@ def scan(
             progress_callback=on_progress,
             weights=weights,
             use_cache=not refresh,
-        )
-
-    console.print(
-        f"Scanned {result.tickers_scanned} tickers, "
-        f"{result.tickers_with_options} had options, "
-        f"found {len(result.candidates)} candidates",
+        ),
     )
+    _print_scan_summary(result)
 
     _render(
         result.candidates, output_fmt, "Penny Option Candidates", limit=0 if show_all else limit
@@ -284,19 +371,15 @@ def spy() -> None:
 @spy.command()
 @click.option("--max-price", type=float, default=0.01, help="Maximum ask price.")
 @click.option("--min-volume", type=int, default=100, help="Minimum contract volume.")
-@click.option(
-    "--output",
-    "output_fmt",
-    type=click.Choice(["table", "json", "csv"]),
-    default="table",
-    help="Output format.",
+@_apply_click_options(
+    _OUTPUT_OPTION,
+    _W_VOL_OI_OPTION,
+    _W_VOLUME_OPTION,
+    _W_PROXIMITY_OPTION,
+    _W_IV_OPTION,
+    _LIMIT_OPTION,
+    _ALL_OPTION,
 )
-@click.option("--w-vol-oi", type=float, default=25.0, help="Scoring weight: volume/OI ratio.")
-@click.option("--w-volume", type=float, default=15.0, help="Scoring weight: raw volume.")
-@click.option("--w-proximity", type=float, default=25.0, help="Scoring weight: strike proximity.")
-@click.option("--w-iv", type=float, default=20.0, help="Scoring weight: implied volatility.")
-@click.option("--limit", type=int, default=_DEFAULT_LIMIT, help="Max candidates to display.")
-@click.option("--all", "show_all", is_flag=True, default=False, help="Show all candidates.")
 def penny(
     max_price: float,
     min_volume: int,
@@ -330,37 +413,35 @@ def penny(
 )
 def favorites(top: int, days: int, output_fmt: str) -> None:
     """Run favorite scans: S&P 500 (balanced) + high-volume stocks (by volume)."""
-    from rich.progress import Progress
-
     from optionctl.scanner import scan_universe
     from optionctl.universe import get_sp500_tickers, get_top_volume_tickers
 
     # S&P 500 scan with balanced weights including earnings
-    sp500_weights = _make_weights(w_vol_oi=25, w_volume=15, w_proximity=25, w_iv=20, w_earnings=15)
+    sp500_weights = _make_weights(
+        w_vol_oi=DEFAULT_WEIGHT_VOL_OI,
+        w_volume=DEFAULT_WEIGHT_VOLUME,
+        w_proximity=DEFAULT_WEIGHT_PROXIMITY,
+        w_iv=DEFAULT_WEIGHT_IV,
+        w_earnings=DEFAULT_WEIGHT_EARNINGS,
+    )
     sp500_tickers = get_sp500_tickers()
     console.print(f"Scanning {len(sp500_tickers)} S&P 500 tickers...")
 
-    with Progress(console=console) as progress:
-        task = progress.add_task("Scanning...", total=len(sp500_tickers))
-
-        def on_sp500_progress(ticker: str, current: int, total: int) -> None:
-            progress.update(task, completed=current, description=f"Scanning {ticker}...")
-
-        sp500_result = scan_universe(
+    sp500_result = _run_with_progress(
+        total=len(sp500_tickers),
+        task_label="Scanning...",
+        description_prefix="Scanning",
+        runner=lambda on_progress: scan_universe(
             sp500_tickers,
             min_dte=1,
             max_dte=days,
             max_price=0.01,
             min_volume=100,
-            progress_callback=on_sp500_progress,
+            progress_callback=on_progress,
             weights=sp500_weights,
-        )
-
-    console.print(
-        f"Scanned {sp500_result.tickers_scanned} tickers, "
-        f"{sp500_result.tickers_with_options} had options, "
-        f"found {len(sp500_result.candidates)} candidates",
+        ),
     )
+    _print_scan_summary(sp500_result)
     _render(sp500_result.candidates, output_fmt, f"S&P 500 (balanced, max {days} DTE)", limit=top)
 
     console.print()
@@ -370,27 +451,21 @@ def favorites(top: int, days: int, output_fmt: str) -> None:
     volume_tickers = get_top_volume_tickers(50)
     console.print(f"Scanning {len(volume_tickers)} high-volume tickers...")
 
-    with Progress(console=console) as progress:
-        task = progress.add_task("Scanning...", total=len(volume_tickers))
-
-        def on_volume_progress(ticker: str, current: int, total: int) -> None:
-            progress.update(task, completed=current, description=f"Scanning {ticker}...")
-
-        volume_result = scan_universe(
+    volume_result = _run_with_progress(
+        total=len(volume_tickers),
+        task_label="Scanning...",
+        description_prefix="Scanning",
+        runner=lambda on_progress: scan_universe(
             volume_tickers,
             min_dte=1,
             max_dte=days,
             max_price=0.01,
             min_volume=50,
-            progress_callback=on_volume_progress,
+            progress_callback=on_progress,
             weights=volume_weights,
-        )
-
-    console.print(
-        f"Scanned {volume_result.tickers_scanned} tickers, "
-        f"{volume_result.tickers_with_options} had options, "
-        f"found {len(volume_result.candidates)} candidates",
+        ),
     )
+    _print_scan_summary(volume_result)
     _render(volume_result.candidates, output_fmt, f"High-Volume (max {days} DTE)", limit=top)
 
 
@@ -420,8 +495,6 @@ def cache() -> None:
 )
 def warm(universe: str, *, fetch_all: bool) -> None:
     """Pre-fetch and cache option chains for a universe."""
-    from rich.progress import Progress
-
     from optionctl.scanner import warm_cache
     from optionctl.universe import get_sp500_tickers, get_top_volume_tickers
 
@@ -429,13 +502,16 @@ def warm(universe: str, *, fetch_all: bool) -> None:
 
     console.print(f"Warming cache for {len(tickers)} tickers...")
 
-    with Progress(console=console) as progress:
-        task = progress.add_task("Fetching...", total=len(tickers))
-
-        def on_progress(ticker: str, current: int, total: int) -> None:
-            progress.update(task, completed=current, description=f"Fetching {ticker}...")
-
-        cached = warm_cache(tickers, progress_callback=on_progress, max_dte=0 if fetch_all else 14)
+    cached = _run_with_progress(
+        total=len(tickers),
+        task_label="Fetching...",
+        description_prefix="Fetching",
+        runner=lambda on_progress: warm_cache(
+            tickers,
+            progress_callback=on_progress,
+            max_dte=0 if fetch_all else 14,
+        ),
+    )
 
     console.print(f"Cached {cached}/{len(tickers)} tickers")
 

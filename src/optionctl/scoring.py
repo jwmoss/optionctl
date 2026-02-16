@@ -4,6 +4,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from optionctl.models import (
+    DEFAULT_WEIGHT_EARNINGS,
+    DEFAULT_WEIGHT_IV,
+    DEFAULT_WEIGHT_PROXIMITY,
+    DEFAULT_WEIGHT_VOL_OI,
+    DEFAULT_WEIGHT_VOLUME,
+)
+
 if TYPE_CHECKING:
     from optionctl.models import OptionCandidate, ScoringWeights
 
@@ -12,13 +20,6 @@ MAX_VOL_OI_RATIO = 5.0
 MAX_VOLUME = 5000.0
 MAX_PROXIMITY_PCT = 20.0
 MAX_IV = 2.0
-
-# Default weights (sum to 100)
-DEFAULT_WEIGHT_VOL_OI = 25.0
-DEFAULT_WEIGHT_VOLUME = 15.0
-DEFAULT_WEIGHT_PROXIMITY = 25.0
-DEFAULT_WEIGHT_IV = 20.0
-DEFAULT_WEIGHT_EARNINGS = 15.0
 
 
 def score_volume_oi(vol_oi_ratio: float, weight: float = DEFAULT_WEIGHT_VOL_OI) -> float:

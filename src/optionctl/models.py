@@ -8,6 +8,13 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from datetime import date
 
+# Default weights (sum to 100)
+DEFAULT_WEIGHT_VOL_OI = 25.0
+DEFAULT_WEIGHT_VOLUME = 15.0
+DEFAULT_WEIGHT_PROXIMITY = 25.0
+DEFAULT_WEIGHT_IV = 20.0
+DEFAULT_WEIGHT_EARNINGS = 15.0
+
 
 @dataclass
 class OptionCandidate:
@@ -37,12 +44,12 @@ class OptionCandidate:
 class ScoringWeights:
     """Configurable weights for composite scoring."""
 
-    vol_oi: float = 25.0
-    volume: float = 15.0
-    proximity: float = 25.0
-    iv: float = 20.0
+    vol_oi: float = DEFAULT_WEIGHT_VOL_OI
+    volume: float = DEFAULT_WEIGHT_VOLUME
+    proximity: float = DEFAULT_WEIGHT_PROXIMITY
+    iv: float = DEFAULT_WEIGHT_IV
     # Enhanced signal weights
-    earnings: float = 15.0  # catalyst detection
+    earnings: float = DEFAULT_WEIGHT_EARNINGS  # catalyst detection
 
 
 @dataclass

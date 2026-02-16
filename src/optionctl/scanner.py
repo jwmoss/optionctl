@@ -5,21 +5,23 @@ from __future__ import annotations
 import logging
 import signal
 import time
+from contextlib import contextmanager
 from datetime import UTC, date, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 import pandas as pd
 import yfinance as yf
 
 from optionctl.cache import read_chain_cache, write_chain_cache, write_no_options_cache
-from optionctl.filters import apply_filters, proximity_pct, volume_oi_ratio
-from optionctl.models import OptionCandidate, ScanResult
+from optionctl.candidates import CandidateContext, build_candidate_from_row
+from optionctl.filters import apply_filters
+from optionctl.models import ScanResult
 from optionctl.scoring import score_candidates
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
 
-    from optionctl.models import ScoringWeights
+    from optionctl.models import OptionCandidate, ScoringWeights
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,25 @@ _interrupted = False
 
 _MAX_RETRIES = 3
 _RETRY_DELAY = 1.0  # seconds
+
+_T = TypeVar("_T")
+
+
+def _retry_with_backoff(
+    operation: Callable[[], _T],
+    *,
+    warning_message: str,
+    ticker: str,
+) -> _T | None:
+    """Run an operation with fixed retries and linear backoff."""
+    for attempt in range(_MAX_RETRIES):
+        try:
+            return operation()
+        except Exception:
+            if attempt < _MAX_RETRIES - 1:
+                time.sleep(_RETRY_DELAY * (attempt + 1))
+    logger.warning(warning_message, ticker)
+    return None
 
 
 def _fetch_with_retry(ticker: str) -> tuple[yf.Ticker, tuple[str, ...]] | None:
@@ -38,17 +59,16 @@ def _fetch_with_retry(ticker: str) -> tuple[yf.Ticker, tuple[str, ...]] | None:
     Returns:
         Tuple of (Ticker, expirations) or None on failure.
     """
-    for attempt in range(_MAX_RETRIES):
-        try:
-            stock = yf.Ticker(ticker)
-            expirations = stock.options
-        except Exception:
-            if attempt < _MAX_RETRIES - 1:
-                time.sleep(_RETRY_DELAY * (attempt + 1))
-        else:
-            return stock, expirations
-    logger.warning("Failed to fetch options for %s", ticker)
-    return None
+
+    def _fetch() -> tuple[yf.Ticker, tuple[str, ...]]:
+        stock = yf.Ticker(ticker)
+        return stock, stock.options
+
+    return _retry_with_backoff(
+        _fetch,
+        warning_message="Failed to fetch options for %s",
+        ticker=ticker,
+    )
 
 
 def _get_price_with_retry(stock: yf.Ticker, ticker: str) -> float | None:
@@ -61,22 +81,51 @@ def _get_price_with_retry(stock: yf.Ticker, ticker: str) -> float | None:
     Returns:
         Price or None on failure.
     """
-    for attempt in range(_MAX_RETRIES):
-        try:
-            price = float(stock.fast_info.last_price)
-        except Exception:
-            if attempt < _MAX_RETRIES - 1:
-                time.sleep(_RETRY_DELAY * (attempt + 1))
-        else:
-            return price
-    logger.warning("Failed to get price for %s", ticker)
-    return None
+    return _retry_with_backoff(
+        lambda: float(stock.fast_info.last_price),
+        warning_message="Failed to get price for %s",
+        ticker=ticker,
+    )
 
 
 def _handle_sigint(signum: int, frame: object) -> None:  # noqa: ARG001
     """Set the interrupt flag so the scan loop exits between tickers."""
     global _interrupted  # noqa: PLW0603
     _interrupted = True
+
+
+@contextmanager
+def _interrupt_guard() -> Iterator[None]:
+    """Install a SIGINT handler and restore the prior handler on exit."""
+    global _interrupted  # noqa: PLW0603
+    _interrupted = False
+    prev_handler = signal.signal(signal.SIGINT, _handle_sigint)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGINT, prev_handler)
+
+
+def _process_tickers(
+    tickers: list[str],
+    progress_callback: Callable[[str, int, int], None] | None,
+    interrupted_message: str,
+    processor: Callable[[str], None],
+) -> int:
+    """Process tickers with shared progress and interrupt handling."""
+    processed = 0
+    with _interrupt_guard():
+        for i, ticker in enumerate(tickers):
+            if _interrupted:
+                logger.info(interrupted_message, i, len(tickers))
+                break
+
+            if progress_callback:
+                progress_callback(ticker, i + 1, len(tickers))
+
+            processor(ticker)
+            processed = i + 1
+    return processed
 
 
 def _parse_expiration(exp_str: str) -> date:
@@ -287,28 +336,20 @@ def scan_ticker(
 
         filtered = apply_filters(df, underlying_price, max_price, min_volume)
 
+        context = CandidateContext(
+            expiration=exp_date,
+            underlying_price=underlying_price,
+            dte=dte,
+            days_to_earnings=days_to_earnings,
+        )
         for _, row in filtered.iterrows():
-            volume = int(row["volume"])
-
-            candidate = OptionCandidate(
-                ticker=ticker,
-                strike=float(row["strike"]),
-                expiration=exp_date,
-                contract_type="call",
-                bid=float(row.get("bid", 0)),
-                ask=float(row.get("_price", row["ask"])),
-                last_price=float(row.get("lastPrice", 0)),
-                volume=volume,
-                open_interest=int(row["openInterest"]),
-                implied_volatility=float(row.get("impliedVolatility", 0)),
-                underlying_price=underlying_price,
-                dte=dte,
-                volume_oi_ratio=volume_oi_ratio(volume, int(row["openInterest"])),
-                proximity_pct=proximity_pct(underlying_price, float(row["strike"])),
-                contract_symbol=str(row.get("contractSymbol", "")),
-                days_to_earnings=days_to_earnings,
+            candidates.append(
+                build_candidate_from_row(
+                    ticker=ticker,
+                    row=row,
+                    context=context,
+                )
             )
-            candidates.append(candidate)
 
     return candidates
 
@@ -341,37 +382,29 @@ def scan_universe(
     Returns:
         ScanResult with scored candidates and scan metadata.
     """
-    global _interrupted  # noqa: PLW0603
-    _interrupted = False
-    prev_handler = signal.signal(signal.SIGINT, _handle_sigint)
-
-    result = ScanResult(tickers_scanned=len(tickers))
+    result = ScanResult()
     all_candidates: list[OptionCandidate] = []
 
-    try:
-        for i, ticker in enumerate(tickers):
-            if _interrupted:
-                logger.info("Scan interrupted after %d/%d tickers", i, len(tickers))
-                result.tickers_scanned = i
-                break
+    def _scan_one_ticker(ticker: str) -> None:
+        candidates = scan_ticker(
+            ticker,
+            min_dte,
+            max_dte,
+            max_price,
+            min_volume,
+            fetch_enhanced=fetch_enhanced,
+            use_cache=use_cache,
+        )
+        if candidates:
+            result.tickers_with_options += 1
+            all_candidates.extend(candidates)
 
-            if progress_callback:
-                progress_callback(ticker, i + 1, len(tickers))
-
-            candidates = scan_ticker(
-                ticker,
-                min_dte,
-                max_dte,
-                max_price,
-                min_volume,
-                fetch_enhanced=fetch_enhanced,
-                use_cache=use_cache,
-            )
-            if candidates:
-                result.tickers_with_options += 1
-                all_candidates.extend(candidates)
-    finally:
-        signal.signal(signal.SIGINT, prev_handler)
+    result.tickers_scanned = _process_tickers(
+        tickers,
+        progress_callback,
+        "Scan interrupted after %d/%d tickers",
+        _scan_one_ticker,
+    )
 
     result.candidates = score_candidates(all_candidates, weights)
     return result
@@ -392,24 +425,18 @@ def warm_cache(
     Returns:
         Number of tickers successfully cached.
     """
-    global _interrupted  # noqa: PLW0603
-    _interrupted = False
-    prev_handler = signal.signal(signal.SIGINT, _handle_sigint)
-
     cached_count = 0
 
-    try:
-        for i, ticker in enumerate(tickers):
-            if _interrupted:
-                logger.info("Cache warming interrupted after %d/%d tickers", i, len(tickers))
-                break
+    def _warm_one_ticker(ticker: str) -> None:
+        nonlocal cached_count
+        if _fetch_and_cache_ticker(ticker, max_dte=max_dte) is not None:
+            cached_count += 1
 
-            if progress_callback:
-                progress_callback(ticker, i + 1, len(tickers))
-
-            if _fetch_and_cache_ticker(ticker, max_dte=max_dte) is not None:
-                cached_count += 1
-    finally:
-        signal.signal(signal.SIGINT, prev_handler)
+    _process_tickers(
+        tickers,
+        progress_callback,
+        "Cache warming interrupted after %d/%d tickers",
+        _warm_one_ticker,
+    )
 
     return cached_count
