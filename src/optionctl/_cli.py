@@ -388,6 +388,49 @@ def status() -> None:
         console.print(f"Tickers: {', '.join(stats['tickers'])}")
 
 
+@main.command()
+@click.option(
+    "--days",
+    type=int,
+    default=30,
+    show_default=True,
+    help="Number of days to include in calibration window.",
+)
+def calibration(days: int) -> None:
+    """Show Brier score calibration for p_itm predictions."""
+    from optionctl.predictions import get_calibration_summary, resolve_outcomes
+
+    console.print("Resolving expired predictions...")
+    resolved = resolve_outcomes()
+    if resolved:
+        console.print(f"Resolved {resolved} predictions")
+
+    summary = get_calibration_summary(days)
+
+    table = Table(title=f"Calibration Summary (last {days} days)", show_lines=False)
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", justify="right")
+
+    brier = summary["brier_score"]
+    if brier is not None:
+        if brier < 0.10:
+            interpretation = "[bold green]excellent[/bold green]"
+        elif brier < 0.20:
+            interpretation = "[yellow]good[/yellow]"
+        else:
+            interpretation = "[red]poor[/red]"
+        table.add_row("Brier Score", f"{brier:.4f} ({interpretation})")
+    else:
+        table.add_row("Brier Score", "[dim]no resolved data[/dim]")
+
+    table.add_row("Predictions", str(summary["n_predictions"]))
+    table.add_row("Resolved", str(summary["n_resolved"]))
+    table.add_row("Mean P(ITM)", f"{summary['mean_p_itm']:.2%}")
+    table.add_row("Hit Rate", f"{summary['hit_rate']:.2%}")
+
+    console.print(table)
+
+
 @cache.command("prune-history")
 @click.option("--max-age", type=int, default=30, help="Delete history files older than N days.")
 def prune_history(max_age: int) -> None:

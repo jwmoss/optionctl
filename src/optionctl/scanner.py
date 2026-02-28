@@ -17,6 +17,8 @@ from optionctl.candidates import CandidateContext, build_candidate_from_row
 from optionctl.filters import apply_filters
 from optionctl.history import compute_vol_vs_avg, record_volume_snapshot
 from optionctl.models import ScanResult
+from optionctl.monte_carlo import simulate_p_itm
+from optionctl.predictions import record_predictions
 from optionctl.scoring import score_candidates
 
 if TYPE_CHECKING:
@@ -384,11 +386,8 @@ def scan_ticker(
     for c in candidates:
         c.vol_vs_avg = compute_vol_vs_avg(c.volume, c.contract_symbol)
 
-    from optionctl.monte_carlo import simulate_p_itm
     for c in candidates:
-        c.p_itm = simulate_p_itm(
-            c.underlying_price, c.strike, c.implied_volatility, c.dte / 365.0
-        )
+        c.p_itm = simulate_p_itm(c.underlying_price, c.strike, c.implied_volatility, c.dte / 365.0)
 
     return candidates
 
@@ -453,6 +452,14 @@ def scan_universe(
 
     record_volume_snapshot(all_candidates)
     result.candidates = score_candidates(all_candidates, weights)
+
+    try:
+        from optionctl.predictions import record_predictions
+
+        record_predictions(result.candidates)
+    except Exception:
+        logger.debug("Failed to record predictions to DB")
+
     return result
 
 

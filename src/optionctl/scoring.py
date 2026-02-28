@@ -181,6 +181,7 @@ def compute_score(  # noqa: PLR0913
         dte: Days to expiration.
         weights: Optional custom weights. Uses defaults if None.
         vol_vs_avg: Volume-to-average multiplier, or None.
+        p_itm: Monte Carlo probability of expiring ITM (0.0 to 1.0).
 
     Returns:
         Composite score (0 to sum of weights).
