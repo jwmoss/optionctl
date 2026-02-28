@@ -313,7 +313,7 @@ def scan_ticker(
     ticker: str,
     min_dte: int = 0,
     max_dte: int = _DEFAULT_MAX_DTE,
-    max_price: float = 0.01,
+    max_price: float = 0.05,
     min_volume: int = 100,
     min_vol_oi: float = 0.0,
     *,
@@ -327,7 +327,7 @@ def scan_ticker(
         ticker: Stock ticker symbol.
         min_dte: Minimum days to expiration.
         max_dte: Maximum days to expiration.
-        max_price: Maximum ask price (default $0.01).
+        max_price: Maximum ask price (default $0.05).
         min_volume: Minimum contract volume.
         min_vol_oi: Minimum volume/open-interest ratio.
         fetch_enhanced: Whether to fetch enhanced signals (earnings, etc.).
@@ -396,7 +396,7 @@ def scan_universe(
     tickers: list[str],
     min_dte: int = 0,
     max_dte: int = _DEFAULT_MAX_DTE,
-    max_price: float = 0.01,
+    max_price: float = 0.05,
     min_volume: int = 100,
     min_vol_oi: float = 0.0,
     progress_callback: Callable[[str, int, int], None] | None = None,

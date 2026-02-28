@@ -47,7 +47,7 @@ uv run optionctl scan --output csv
 |------|---------|---------|
 | `--min-dte` | `0` | Minimum days to expiration |
 | `--max-dte` | `15` | Maximum days to expiration |
-| `--max-price` | `0.01` | Max contract ask/last |
+| `--max-price` | `0.05` | Max contract ask/last |
 | `--min-volume` | `250` | Minimum contract volume |
 | `--min-vol-oi` | `1.0` | Minimum volume/open-interest ratio |
 | `--output` | `table` | `table`, `json`, `csv` |
