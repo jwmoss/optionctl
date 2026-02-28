@@ -58,6 +58,7 @@ class OptionCandidate:
     # Enhanced signals
     days_to_earnings: int | None = None  # days until next earnings, None if unknown
     vol_vs_avg: float | None = None  # current volume vs rolling average
+    p_itm: float = 0.0  # Monte Carlo probability of expiring ITM
 
 
 @dataclass
@@ -71,6 +72,7 @@ class ScoringWeights:
     # Enhanced signal weights
     earnings: float = DEFAULT_WEIGHT_EARNINGS  # catalyst detection
     vol_vs_avg: float = 0.0  # disabled by default, opt-in
+    p_itm: float = 0.0  # disabled by default, opt-in
 
 
 @dataclass

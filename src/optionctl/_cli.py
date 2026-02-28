@@ -57,6 +57,7 @@ def _render_table(candidates: list[OptionCandidate], title: str) -> None:
     table.add_column("Vol/OI", justify="right", style="magenta")
     table.add_column("IV", justify="right")
     table.add_column("Dist%", justify="right")
+    table.add_column("P(ITM)", justify="right")
     table.add_column("Score", justify="right", style="bold green")
 
     for c in candidates:
@@ -77,6 +78,7 @@ def _render_table(candidates: list[OptionCandidate], title: str) -> None:
             f"{c.volume_oi_ratio:.1f}",
             f"{c.implied_volatility:.0%}",
             dist_str,
+            f"{c.p_itm:.1%}",
             f"{c.score:.1f}",
         )
 
