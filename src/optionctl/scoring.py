@@ -23,6 +23,8 @@ MAX_IV = 2.0
 MAX_VOL_VS_AVG = 10.0
 
 DEFAULT_WEIGHT_VOL_VS_AVG = 0.0
+DEFAULT_WEIGHT_P_ITM = 0.0
+MAX_P_ITM = 0.05
 
 
 def score_volume_oi(vol_oi_ratio: float, weight: float = DEFAULT_WEIGHT_VOL_OI) -> float:
@@ -130,6 +132,25 @@ def score_vol_vs_avg(vol_vs_avg: float | None, weight: float = DEFAULT_WEIGHT_VO
     return normalized * weight
 
 
+def score_p_itm(p_itm: float, weight: float = DEFAULT_WEIGHT_P_ITM) -> float:
+    """Score based on Monte Carlo probability of expiring ITM.
+
+    Normalizes to MAX_P_ITM (5%) — a 5%+ ITM probability is full score
+    for a deep OTM penny call.
+
+    Args:
+        p_itm: Probability of expiring in-the-money (0.0 to 1.0).
+        weight: Maximum points for this component.
+
+    Returns:
+        Weighted score component.
+    """
+    if weight <= 0:
+        return 0.0
+    normalized = min(p_itm / MAX_P_ITM, 1.0)
+    return normalized * weight
+
+
 def compute_score(  # noqa: PLR0913
     vol_oi_ratio: float,
     volume: int,
@@ -139,6 +160,7 @@ def compute_score(  # noqa: PLR0913
     dte: int = 0,
     weights: ScoringWeights | None = None,
     vol_vs_avg: float | None = None,
+    p_itm: float = 0.0,
 ) -> float:
     """Compute composite score for an option candidate.
 
@@ -170,6 +192,7 @@ def compute_score(  # noqa: PLR0913
         w_iv = DEFAULT_WEIGHT_IV
         w_earnings = DEFAULT_WEIGHT_EARNINGS
         w_vol_vs_avg = DEFAULT_WEIGHT_VOL_VS_AVG
+        w_p_itm = DEFAULT_WEIGHT_P_ITM
     else:
         w_vol_oi = weights.vol_oi
         w_volume = weights.volume
@@ -177,6 +200,7 @@ def compute_score(  # noqa: PLR0913
         w_iv = weights.iv
         w_earnings = weights.earnings
         w_vol_vs_avg = weights.vol_vs_avg
+        w_p_itm = weights.p_itm
 
     return (
         score_volume_oi(vol_oi_ratio, w_vol_oi)
@@ -185,6 +209,7 @@ def compute_score(  # noqa: PLR0913
         + score_iv(implied_volatility, w_iv)
         + score_earnings(days_to_earnings, dte, w_earnings)
         + score_vol_vs_avg(vol_vs_avg, w_vol_vs_avg)
+        + score_p_itm(p_itm, w_p_itm)
     )
 
 
@@ -211,5 +236,6 @@ def score_candidates(
             dte=c.dte,
             weights=weights,
             vol_vs_avg=c.vol_vs_avg,
+            p_itm=c.p_itm,
         )
     return sorted(candidates, key=lambda c: c.score, reverse=True)

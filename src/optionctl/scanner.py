@@ -384,6 +384,12 @@ def scan_ticker(
     for c in candidates:
         c.vol_vs_avg = compute_vol_vs_avg(c.volume, c.contract_symbol)
 
+    from optionctl.monte_carlo import simulate_p_itm
+    for c in candidates:
+        c.p_itm = simulate_p_itm(
+            c.underlying_price, c.strike, c.implied_volatility, c.dte / 365.0
+        )
+
     return candidates
 
 
