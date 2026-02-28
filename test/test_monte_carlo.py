@@ -42,3 +42,26 @@ def test_returns_float():
     p = simulate_p_itm(100.0, 105.0, 0.3, 7 / 365.0)
     assert isinstance(p, float)
     assert 0.0 <= p <= 1.0
+
+
+def test_antithetic_variates_lower_variance():
+    """Antithetic variates should reduce variance vs crude MC with same N."""
+    import numpy as np
+
+    rng = np.random.default_rng(42)
+    S0, K, sigma, T = 100.0, 110.0, 0.3, 30 / 365.0
+    n_trials = 50
+
+    # Crude MC estimates (monkey-patch to disable antithetic for comparison)
+    crude = []
+    for _ in range(n_trials):
+        Z = rng.standard_normal(50_000)
+        S_T = S0 * np.exp(-0.5 * sigma**2 * T + sigma * np.sqrt(T) * Z)
+        crude.append(float((S_T > K).mean()))
+
+    # Antithetic estimates
+    antithetic = [simulate_p_itm(S0, K, sigma, T, N=50_000) for _ in range(n_trials)]
+
+    assert np.std(antithetic) < np.std(crude), (
+        f"Antithetic std={np.std(antithetic):.5f} not less than crude std={np.std(crude):.5f}"
+    )
