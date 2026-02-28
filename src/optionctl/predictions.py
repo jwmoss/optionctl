@@ -53,7 +53,7 @@ class Prediction(Model):
     outcome = BooleanField(null=True)
     resolved_at = DateTimeField(null=True)
 
-    class Meta:  # noqa: D106
+    class Meta:
         """Peewee model metadata."""
 
         database = _db
@@ -131,7 +131,7 @@ def resolve_outcomes(*, db_path: Path | None = None) -> int:
     now = datetime.now(tz=UTC)
 
     for ticker, preds in ticker_predictions.items():
-        try:  # noqa: SIM105
+        try:
             stock = yf.Ticker(ticker)
             price = float(stock.fast_info.last_price)
         except (ValueError, TypeError, KeyError):

@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.table import Table
 
 from optionctl.models import ScoringWeights
+from optionctl.predictions import _BRIER_EXCELLENT, _BRIER_GOOD
 
 if TYPE_CHECKING:
     from optionctl.models import OptionCandidate, ScanResult
@@ -413,9 +414,9 @@ def calibration(days: int) -> None:
 
     brier = summary["brier_score"]
     if brier is not None:
-        if brier < 0.10:
+        if brier < _BRIER_EXCELLENT:
             interpretation = "[bold green]excellent[/bold green]"
-        elif brier < 0.20:
+        elif brier < _BRIER_GOOD:
             interpretation = "[yellow]good[/yellow]"
         else:
             interpretation = "[red]poor[/red]"

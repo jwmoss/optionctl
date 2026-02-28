@@ -454,10 +454,8 @@ def scan_universe(
     result.candidates = score_candidates(all_candidates, weights)
 
     try:
-        from optionctl.predictions import record_predictions
-
         record_predictions(result.candidates)
-    except Exception:
+    except (OSError, RuntimeError):
         logger.debug("Failed to record predictions to DB")
 
     return result
