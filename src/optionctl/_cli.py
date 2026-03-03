@@ -111,6 +111,7 @@ def _render_json(candidates: list[OptionCandidate]) -> None:
             "proximity_pct": round(c.proximity_pct, 2),
             "dte": c.dte,
             "score": round(c.score, 1),
+            "p_itm": round(c.p_itm, 4) if c.p_itm is not None else None,
             "contract_symbol": c.contract_symbol,
         }
         for c in candidates
