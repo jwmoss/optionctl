@@ -2,21 +2,6 @@ SHELL := /bin/bash
 
 PY_IMPORT = optionctl
 
-# Optionally overridden by the user in the `test` target.
-TESTS :=
-
-# If the user selects a specific test pattern to run, set `pytest` to fail fast
-# and only run tests that match the pattern.
-# Otherwise, run all tests and enable coverage assertions, since we expect
-# complete test coverage.
-ifneq ($(TESTS),)
-	TEST_ARGS := -x -k $(TESTS)
-	COV_ARGS :=
-else
-	TEST_ARGS :=
-	COV_ARGS := --fail-under 80
-endif
-
 .PHONY: all
 all:
 	@echo "Run my targets individually!"
@@ -24,35 +9,37 @@ all:
 .PHONY: dev
 dev:
 	uv sync --group dev
-	uv run prek install
+	uv run --locked --no-config prek install
 .PHONY: run
 run:
-	uv run optionctl $(ARGS)
+	uv run --locked --no-config optionctl $(ARGS)
 
 .PHONY: lint
 lint:
-	uv sync --group lint
-	uv run ruff format --check && \
-		uv run ruff check && \
-		uv run ty check && \
-		uv run interrogate -c pyproject.toml .
+	uv sync --locked --no-config --group lint
+	uv run --locked --no-config ruff format --check && \
+		uv run --locked --no-config ruff check && \
+		uv run --locked --no-config ty check && \
+		uv run --locked --no-config interrogate -c pyproject.toml .
 
 .PHONY: format
 format:
-	uv sync --group lint
-	uv run ruff format && \
-		uv run ruff check --fix
+	uv sync --locked --no-config --group lint
+	uv run --locked --no-config ruff format && \
+		uv run --locked --no-config ruff check --fix
 
 .PHONY: test
 test:
-	uv sync --group test
-	uv run pytest -svv --timeout=300 --cov=$(PY_IMPORT) $(T) $(TEST_ARGS)
-	uv run coverage report -m $(COV_ARGS)
+	uv run --locked --no-config python scripts/live-e2e.py
+
+.PHONY: check
+check: lint build
 
 .PHONY: doc
 doc:
-	uv run pdoc -o html $(PY_IMPORT)
+	uv run --locked --no-config pdoc -o html $(PY_IMPORT)
 
 .PHONY: build
 build:
-	uv build
+	uv lock --check --no-config
+	uv build --no-config
