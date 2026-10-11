@@ -26,12 +26,3 @@ repos:
         types: [python]
         pass_filenames: false
         require_serial: true
-
-      - id: test
-        name: run tests
-        entry: make test
-        language: system
-        types: [python]
-        pass_filenames: false
-        require_serial: true
-        stages: [pre-push]

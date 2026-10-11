@@ -6,6 +6,7 @@ import csv
 import json
 import sys
 from collections.abc import Callable
+from importlib.metadata import version as package_version
 from typing import TYPE_CHECKING, TypeVar
 
 import click
@@ -19,6 +20,7 @@ if TYPE_CHECKING:
     from optionctl.models import OptionCandidate, ScanResult
 
 console = Console(stderr=True)
+output_console = Console()
 
 _T = TypeVar("_T")
 _ProgressCallback = Callable[[str, int, int], None]
@@ -83,7 +85,7 @@ def _render_table(candidates: list[OptionCandidate], title: str) -> None:
             f"{c.score:.1f}",
         )
 
-    console.print(table)
+    output_console.print(table)
 
 
 def _print_scan_summary(result: ScanResult) -> None:
@@ -166,7 +168,7 @@ def _render(
     limit: int = _DEFAULT_LIMIT,
 ) -> None:
     """Dispatch rendering to the appropriate format."""
-    if not candidates:
+    if not candidates and output == "table":
         console.print("[yellow]No unusual options found.[/yellow]")
         return
 
@@ -209,6 +211,12 @@ def _run_with_progress(
 @click.version_option(package_name="optionctl")
 def main() -> None:
     """Unusual options flow scanner for S&P 500 tickers."""
+
+
+@main.command()
+def version() -> None:
+    """Print version information."""
+    click.echo(f"optionctl, version {package_version('optionctl')}")
 
 
 @main.command()
@@ -430,7 +438,7 @@ def calibration(days: int) -> None:
     table.add_row("Mean P(ITM)", f"{summary['mean_p_itm']:.2%}")
     table.add_row("Hit Rate", f"{summary['hit_rate']:.2%}")
 
-    console.print(table)
+    output_console.print(table)
 
 
 @cache.command("prune-history")

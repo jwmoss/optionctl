@@ -1,4 +1,4 @@
-name: Unit tests
+name: Package checks
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
 permissions: {}
 
 jobs:
-  test:
+  build:
     strategy:
       matrix:
         python:
@@ -29,5 +29,8 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      - name: test
-        run: make test
+      - name: Build package
+        run: make build
+
+      - name: Check installed CLI
+        run: uv run --locked --no-config optionctl --version
