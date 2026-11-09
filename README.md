@@ -76,6 +76,14 @@ uv run optionctl cache prune-history --max-age 30
 
 ```bash
 make format
-make lint
-make test
+make check # static checks and package build
+make test  # live SPY scan; requires Yahoo Finance access
 ```
+
+`make test` uses the installed CLI and current market data. It updates the normal local
+cache and prediction history. It does not place trades. CI runs static checks and
+package checks without live services. Unit and mock suites are not part of this project.
+
+`optionctl version` and `optionctl --version` print the package version. JSON scans
+write an array to stdout, including `[]` when no contract matches. Human tables also
+use stdout; progress and diagnostics use stderr.

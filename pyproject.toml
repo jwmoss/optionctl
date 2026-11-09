@@ -1,6 +1,6 @@
 [project]
 name = "optionctl"
-version = "0.0.1"
+version = "0.1.0"
 description = ""
 readme = "README.md"
 license-files = ["LICENSE"]
@@ -30,7 +30,6 @@ build-backend = "uv_build"
 
 [dependency-groups]
 doc = ["pdoc"]
-test = ["pytest", "pytest-cov", "pytest-timeout", "pretend", "coverage[toml]"]
 lint = [
     # NOTE: ruff is under active development, so we pin conservatively here
     # and let Dependabot periodically perform this update.
@@ -40,7 +39,6 @@ lint = [
 ]
 dev = [
     {include-group = "doc"},
-    {include-group = "test"},
     {include-group = "lint"},
     "prek",
 ]
@@ -53,10 +51,6 @@ Homepage = "https://github.com/jwmoss/optionctl"
 Issues = "https://github.com/jwmoss/optionctl/issues"
 Source = "https://github.com/jwmoss/optionctl"
 
-[tool.coverage.run]
-# don't attempt code coverage for the CLI entrypoints
-omit = ["src/optionctl/_cli.py"]
-
 [tool.ty.terminal]
 error-on-warning = true
 
@@ -64,7 +58,7 @@ error-on-warning = true
 python-version = "3.11"
 
 [tool.ty.src]
-include = ["src", "test"]
+include = ["src"]
 
 [tool.ruff]
 line-length = 100
@@ -119,29 +113,12 @@ max-positional-args = 5
 "src/optionctl/yfinance_source.py" = [
     "BLE001",  # yfinance raises unpredictable exceptions
 ]
-"test/**/*.py" = [
-    "ANN",   # no type annotations in tests
-    "ARG001",  # fixtures used for side effects look unused
-    "D",     # no docstrings in tests
-    "S101",  # asserts are expected in tests
-    "SLF001",  # tests need to access private members
-    "PLR2004",  # allow magic values in tests
-    "PLR0913",  # parametrized/mock tests often have many args
-    "PLC0415",  # allow deferred imports in tests
-    "PT019",  # @patch args misidentified as fixtures
-]
-"**/conftest.py" = ["D"]  # No docstrings in pytest config
 [tool.interrogate]
 # don't enforce documentation coverage for packaging, testing, the virtual
 # environment, or the CLI (which is documented separately).
-exclude = ["env", "test", "src/optionctl/_cli.py"]
+exclude = ["env", "src/optionctl/_cli.py"]
 ignore-semiprivate = true
 fail-under = 100
-
-[tool.pytest.ini_options]
-testpaths = ["test"]
-python_files = ["test_*.py"]
-addopts = "--durations=10"
 
 [tool.uv.sources]
 optionctl = { workspace = true }

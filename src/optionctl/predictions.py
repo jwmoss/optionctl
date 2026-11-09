@@ -141,7 +141,8 @@ def resolve_outcomes(*, db_path: Path | None = None) -> int:
         with _db.atomic():
             for pred in preds:
                 pred.outcome = price > pred.strike
-                pred.resolved_at = now
+                # Peewee stores values through its field descriptor.
+                pred.resolved_at = now  # ty: ignore[invalid-assignment]
                 pred.save()
                 count += 1
 
